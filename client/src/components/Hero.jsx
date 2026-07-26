@@ -1,4 +1,9 @@
-export default function Hero() {
+export default function Hero({ onNavigate }) {
+  const handleActionClick = (e) => {
+    e.preventDefault();
+    if (onNavigate) onNavigate("login");
+  };
+
   return (
     <section className="relative overflow-hidden bg-white py-20 sm:py-32">
       {/* Background Decorative Elements */}
@@ -39,7 +44,10 @@ export default function Hero() {
 
           {/* Action Buttons */}
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-            <button className="group relative flex h-12 items-center justify-center rounded-xl bg-blue-600 px-6 font-semibold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 transition-all duration-200 cursor-pointer overflow-hidden">
+            <button
+              onClick={handleActionClick}
+              className="group relative flex h-12 items-center justify-center rounded-xl bg-blue-600 px-6 font-semibold text-white shadow-lg shadow-blue-500/25 hover:bg-blue-700 transition-all duration-200 cursor-pointer overflow-hidden"
+            >
               <span className="relative z-10 flex items-center gap-2">
                 Find Team
                 <svg
@@ -55,7 +63,10 @@ export default function Hero() {
               </span>
             </button>
             
-            <button className="flex h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all duration-200 cursor-pointer">
+            <button
+              onClick={handleActionClick}
+              className="flex h-12 items-center justify-center rounded-xl border border-slate-200 bg-white px-6 font-semibold text-slate-700 shadow-sm hover:bg-slate-50 hover:text-blue-600 hover:border-blue-200 transition-all duration-200 cursor-pointer"
+            >
               Explore Projects
             </button>
           </div>

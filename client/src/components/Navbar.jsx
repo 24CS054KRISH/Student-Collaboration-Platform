@@ -1,15 +1,36 @@
 import { useState } from "react";
 
-export default function Navbar() {
+export default function Navbar({ onNavigate }) {
   const [isOpen, setIsOpen] = useState(false);
+
+  const handleHomeClick = (e) => {
+    e.preventDefault();
+    if (onNavigate) onNavigate("landing");
+    setIsOpen(false);
+  };
+
+  const handleLoginClick = (e) => {
+    e.preventDefault();
+    if (onNavigate) onNavigate("login");
+    setIsOpen(false);
+  };
+
+  const handleRegisterClick = (e) => {
+    e.preventDefault();
+    if (onNavigate) onNavigate("register");
+    setIsOpen(false);
+  };
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-slate-200/80 bg-white/80 backdrop-blur-md transition-all duration-300">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo Section */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20">
+          <div
+            onClick={handleHomeClick}
+            className="flex items-center gap-2 cursor-pointer group"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/20 group-hover:scale-105 transition-transform duration-200">
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 fill="none"
@@ -35,12 +56,14 @@ export default function Navbar() {
             <div className="flex gap-6">
               <a
                 href="#"
+                onClick={handleHomeClick}
                 className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors duration-200"
               >
                 Home
               </a>
               <a
                 href="#"
+                onClick={(e) => e.preventDefault()}
                 className="text-sm font-medium text-slate-600 hover:text-blue-600 transition-colors duration-200"
               >
                 About
@@ -48,10 +71,16 @@ export default function Navbar() {
             </div>
             <div className="h-4 w-px bg-slate-200"></div>
             <div className="flex items-center gap-4">
-              <button className="text-sm font-medium text-slate-700 hover:text-blue-600 transition-colors duration-200 cursor-pointer">
+              <button
+                onClick={handleLoginClick}
+                className="text-sm font-medium text-slate-700 hover:text-blue-600 transition-colors duration-200 cursor-pointer"
+              >
                 Login
               </button>
-              <button className="rounded-lg bg-blue-600 px-4 h-9 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm shadow-blue-500/10 transition-all duration-200 cursor-pointer">
+              <button
+                onClick={handleRegisterClick}
+                className="rounded-lg bg-blue-600 px-4 h-9 text-sm font-semibold text-white hover:bg-blue-700 shadow-sm shadow-blue-500/10 transition-all duration-200 cursor-pointer"
+              >
                 Register
               </button>
             </div>
@@ -99,22 +128,30 @@ export default function Navbar() {
         <div className="space-y-1 px-4 py-3">
           <a
             href="#"
+            onClick={handleHomeClick}
             className="block rounded-lg px-3 py-2 text-base font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors"
           >
             Home
           </a>
           <a
             href="#"
+            onClick={(e) => e.preventDefault()}
             className="block rounded-lg px-3 py-2 text-base font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 transition-colors"
           >
             About
           </a>
           <div className="my-2 border-t border-slate-100"></div>
           <div className="flex flex-col gap-2 pt-2">
-            <button className="w-full rounded-lg px-3 py-2 text-left text-base font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer">
+            <button
+              onClick={handleLoginClick}
+              className="w-full rounded-lg px-3 py-2 text-left text-base font-medium text-slate-600 hover:bg-slate-50 hover:text-blue-600 cursor-pointer"
+            >
               Login
             </button>
-            <button className="w-full rounded-lg bg-blue-600 px-3 py-2 text-center text-base font-semibold text-white hover:bg-blue-700 shadow-sm shadow-blue-500/10 cursor-pointer">
+            <button
+              onClick={handleRegisterClick}
+              className="w-full rounded-lg bg-blue-600 px-3 py-2 text-center text-base font-semibold text-white hover:bg-blue-700 shadow-sm shadow-blue-500/10 cursor-pointer"
+            >
               Register
             </button>
           </div>

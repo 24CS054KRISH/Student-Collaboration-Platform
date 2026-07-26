@@ -1,12 +1,20 @@
-export default function Footer() {
+export default function Footer({ onNavigate }) {
+  const handleHomeClick = (e) => {
+    e.preventDefault();
+    if (onNavigate) onNavigate("landing");
+  };
+
   return (
     <footer className="border-t border-slate-200/80 bg-white">
       <div className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
         <div className="xl:grid xl:grid-cols-3 xl:gap-8">
           {/* Logo and Description */}
           <div className="space-y-6 xl:col-span-1">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white">
+            <div
+              onClick={handleHomeClick}
+              className="flex items-center gap-2 cursor-pointer group w-fit"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white group-hover:scale-105 transition-transform duration-200">
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   fill="none"
