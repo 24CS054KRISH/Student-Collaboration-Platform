@@ -1,9 +1,17 @@
+import Navbar from "./components/Navbar";
+import Hero from "./components/Hero";
+import Features from "./components/Features";
+import Footer from "./components/Footer";
+
 function App() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-100">
-      <h1 className="text-5xl font-bold text-blue-600">
-        Student Collaboration Platform 🚀
-      </h1>
+    <div className="min-h-screen bg-white text-slate-900 antialiased selection:bg-blue-600 selection:text-white">
+      <Navbar />
+      <main>
+        <Hero />
+        <Features />
+      </main>
+      <Footer />
     </div>
   );
 }
