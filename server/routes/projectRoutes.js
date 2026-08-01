@@ -41,4 +41,74 @@ router.post('/create', async (req, res) => {
     }
 });
 
+// GET /all
+router.get('/all', async (req, res) => {
+    try {
+        const projects = await Project.find().sort({ createdAt: -1 });
+        const totalProjects = projects.length;
+
+        return res.status(200).json({
+            success: true,
+            totalProjects,
+            projects
+        });
+    } catch (error) {
+        console.error("Error fetching projects:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while fetching projects"
+        });
+    }
+});
+
+// GET /my/:userId
+router.get('/my/:userId', async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        const projects = await Project.find({ createdBy: userId }).sort({ createdAt: -1 });
+        const totalProjects = projects.length;
+
+        return res.status(200).json({
+            success: true,
+            totalProjects,
+            projects
+        });
+    } catch (error) {
+        console.error("Error fetching user projects:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while fetching user projects"
+        });
+    }
+});
+
+// DELETE /delete/:projectId
+router.delete('/delete/:projectId', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        await Project.findByIdAndDelete(projectId);
+
+        return res.status(200).json({
+            success: true,
+            message: "Project deleted successfully"
+        });
+    } catch (error) {
+        console.error("Error deleting project:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error during project deletion"
+        });
+    }
+});
+
 module.exports = router;
