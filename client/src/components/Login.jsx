@@ -8,6 +8,7 @@ export default function Login({ onNavigate }) {
     e.preventDefault();
     // No backend or auth logic yet
     console.log("Submit Login Form:", { email, password });
+    if (onNavigate) onNavigate("dashboard");
   };
 
   return (

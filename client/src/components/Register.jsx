@@ -21,6 +21,7 @@ export default function Register({ onNavigate }) {
     e.preventDefault();
     // No validation or backend auth logic yet as per rules
     console.log("Submit Register Form:", formData);
+    if (onNavigate) onNavigate("dashboard");
   };
 
   return (
