@@ -7,7 +7,7 @@ const jwt = require('jsonwebtoken');
 // POST /register
 router.post('/register', async (req, res) => {
     try {
-        const { fullName, email, password, college, branch, year } = req.body;
+        const { fullName, email, password, college, branch, department, year, skills } = req.body;
 
         // Check if email already exists
         const existingUser = await User.findOne({ email });
@@ -25,16 +25,29 @@ router.post('/register', async (req, res) => {
             email,
             password: hashedPassword,
             college,
-            branch,
-            year
+            branch: branch || department,
+            year,
+            skills: typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : (skills || [])
         });
 
         // Save to MongoDB
         await newUser.save();
 
+        // Sign JWT token
+        const token = jwt.sign(
+            { id: newUser._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        const userObj = newUser.toObject();
+        delete userObj.password;
+
         return res.status(201).json({
             success: true,
-            message: "User registered successfully"
+            message: "User registered successfully",
+            token,
+            user: userObj
         });
     } catch (error) {
         console.error("Error registering user:", error);

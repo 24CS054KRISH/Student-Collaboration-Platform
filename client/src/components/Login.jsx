@@ -1,14 +1,44 @@
 import { useState } from "react";
+import { loginUser } from "../api/authApi";
 
 export default function Login({ onNavigate }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // No backend or auth logic yet
-    console.log("Submit Login Form:", { email, password });
-    if (onNavigate) onNavigate("dashboard");
+    
+    // Validate email and password
+    if (!email || !password) {
+      alert("Email and password are required.");
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      alert("Please enter a valid email address.");
+      return;
+    }
+
+    try {
+      const response = await loginUser({ email, password });
+      
+      // Save JWT token in localStorage using key: token
+      localStorage.setItem("token", response.token);
+      
+      // Save logged-in user in localStorage using key: user
+      localStorage.setItem("user", JSON.stringify(response.user));
+      
+      // Show alert: "Login Successful"
+      alert("Login Successful");
+      
+      // Navigate to Dashboard
+      if (onNavigate) onNavigate("dashboard");
+    } catch (error) {
+      // Show the backend error message
+      const errorMessage = error.response?.data?.message || error.message || "Login failed";
+      alert(errorMessage);
+    }
   };
 
   return (

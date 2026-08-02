@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { registerUser } from "../api/authApi";
 
 export default function Register({ onNavigate }) {
   const [formData, setFormData] = useState({
@@ -17,11 +18,49 @@ export default function Register({ onNavigate }) {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // No validation or backend auth logic yet as per rules
-    console.log("Submit Register Form:", formData);
-    if (onNavigate) onNavigate("dashboard");
+    
+    const { fullName, email, department, year, skills, interests, password, confirmPassword } = formData;
+
+    // Validate that all required fields are filled
+    if (!fullName || !email || !department || !year || !skills || !interests || !password || !confirmPassword) {
+      alert("All fields are required.");
+      return;
+    }
+
+    // Validate password === confirmPassword
+    if (password !== confirmPassword) {
+      alert("Passwords do not match.");
+      return;
+    }
+
+    try {
+      const response = await registerUser({
+        fullName,
+        email,
+        department,
+        year,
+        skills,
+        interests,
+        password
+      });
+
+      // Save response.token into localStorage as "token"
+      localStorage.setItem("token", response.token);
+
+      // Save response.user into localStorage as "user"
+      localStorage.setItem("user", JSON.stringify(response.user));
+
+      alert("Registration Successful");
+
+      // Navigate to Dashboard
+      if (onNavigate) onNavigate("dashboard");
+    } catch (error) {
+      // If backend returns an error: Show alert(error.response.data.message)
+      const errorMessage = error.response?.data?.message || error.message || "Registration failed";
+      alert(errorMessage);
+    }
   };
 
   return (

@@ -1,32 +1,54 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { getMyProjects, updateProject, deleteProject } from "../api/projectApi";
 
 export default function MyProjects({ projects, setProjects, onCreateClick }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFilter, setSelectedFilter] = useState("All");
-  
+
   // Modals / Overlays States
   const [editingProject, setEditingProject] = useState(null);
   const [viewingProject, setViewingProject] = useState(null);
 
+  const [myProjects, setMyProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const user = JSON.parse(localStorage.getItem("user") || "{}");
+
+  useEffect(() => {
+    const fetchUserProjects = async () => {
+      if (!user?._id) return;
+      try {
+        setLoading(true);
+        const data = await getMyProjects(user._id);
+        setMyProjects(data.projects || []);
+      } catch (error) {
+        console.error("Error fetching user projects:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchUserProjects();
+  }, [user?._id]);
+
   // Filter projects by status chip and search query
-  const filteredProjects = projects.filter((p) => {
-    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.description.toLowerCase().includes(searchQuery.toLowerCase());
-    
+  const filteredProjects = myProjects.filter((p) => {
+    const matchesSearch = (p.title || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (p.description || "").toLowerCase().includes(searchQuery.toLowerCase());
+
     let matchesStatus = true;
     if (selectedFilter === "Active") {
-      matchesStatus = p.status === "In Progress" || p.status === "Planning";
+      matchesStatus = p.status === "In Progress" || p.status === "Planning" || p.status === "Open";
     } else if (selectedFilter === "Completed") {
       matchesStatus = p.status === "Completed";
     } else if (selectedFilter === "Draft") {
       matchesStatus = p.status === "Draft";
     }
-    
+
     return matchesSearch && matchesStatus;
   });
 
   // Handle Edit submission
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
     if (!editingProject.title || !editingProject.description) return;
 
@@ -35,14 +57,73 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
       ? editingProject.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0)
       : editingProject.tags;
 
-    const updated = {
-      ...editingProject,
-      tags: updatedTags,
-      progress: Math.min(100, Math.max(0, parseInt(editingProject.progress) || 0))
-    };
+    try {
+      const payload = {
+        title: editingProject.title,
+        description: editingProject.description,
+        category: editingProject.category,
+        teamSize: editingProject.teamSize,
+        requiredSkills: updatedTags
+      };
 
-    setProjects(projects.map((p) => (p.id === updated.id ? updated : p)));
-    setEditingProject(null);
+      const response = await updateProject(editingProject._id || editingProject.id, payload);
+
+      if (response.success) {
+        const updated = {
+          ...editingProject,
+          ...response.project
+        };
+
+        setMyProjects(myProjects.map((p) => {
+          if (updated._id && p._id === updated._id) return updated;
+          if (updated.id && p.id === updated.id) return updated;
+          return p;
+        }));
+
+        if (setProjects && projects) {
+          setProjects(projects.map((p) => {
+            if (updated._id && p._id === updated._id) return updated;
+            if (updated.id && p.id === updated.id) return updated;
+            return p;
+          }));
+        }
+
+        setEditingProject(null);
+        alert("Project updated successfully");
+      } else {
+        alert(response.message || "Failed to update project");
+      }
+    } catch (error) {
+      console.error("Error updating project:", error);
+      alert(error.response?.data?.message || "Error updating project. Please try again.");
+    }
+  };
+
+  const handleDelete = async (projectId) => {
+    if (!window.confirm("Are you sure you want to delete this project?")) {
+      return;
+    }
+
+    try {
+      const response = await deleteProject(projectId);
+
+      if (response.success) {
+        // Remove from local myProjects state
+        setMyProjects(myProjects.filter((p) => p._id !== projectId && p.id !== projectId));
+
+        // Remove from global projects state if it exists
+        if (setProjects && projects) {
+          setProjects(projects.filter((p) => p._id !== projectId && p.id !== projectId));
+        }
+
+        alert("Project deleted successfully");
+      } else {
+        alert(response.message || "Failed to delete project");
+      }
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      alert(error.response?.data?.message || "Error deleting project. Please try again.");
+    }
   };
 
   return (
@@ -90,11 +171,10 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
             <button
               key={filter}
               onClick={() => setSelectedFilter(filter)}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                selectedFilter === filter
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${selectedFilter === filter
                   ? "bg-blue-600 text-white shadow-md shadow-blue-500/15"
                   : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
+                }`}
             >
               {filter}
             </button>
@@ -103,7 +183,12 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
       </div>
 
       {/* 3. Projects Grid */}
-      {filteredProjects.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center items-center py-20">
+          <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+          <span className="ml-3 text-sm font-semibold text-slate-500 animate-pulse">Loading your projects...</span>
+        </div>
+      ) : filteredProjects.length === 0 ? (
         <div className="bg-white border border-dashed border-slate-200 rounded-2xl p-16 text-center shadow-sm">
           <div className="h-14 w-14 rounded-full bg-slate-50 flex items-center justify-center text-slate-400 mx-auto mb-4 border border-slate-100">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -119,24 +204,23 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredProjects.map((project) => (
             <div
-              key={project.id}
+              key={project.id || project._id}
               className="group bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col justify-between"
             >
               <div>
                 {/* Status Badge */}
                 <div className="flex items-center justify-between mb-4">
-                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider uppercase ${
-                    project.status === "Completed"
+                  <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider uppercase ${project.status === "Completed"
                       ? "bg-green-50 text-green-600 border border-green-100"
                       : project.status === "In Progress"
-                      ? "bg-amber-50 text-amber-600 border border-amber-100"
-                      : project.status === "Planning"
-                      ? "bg-blue-50 text-blue-600 border border-blue-100"
-                      : "bg-slate-100 text-slate-500 border border-slate-200"
-                  }`}>
-                    {project.status}
+                        ? "bg-amber-50 text-amber-600 border border-amber-100"
+                        : project.status === "Planning" || project.status === "Open"
+                          ? "bg-blue-50 text-blue-600 border border-blue-100"
+                          : "bg-slate-100 text-slate-500 border border-slate-200"
+                    }`}>
+                    {project.status || "Open"}
                   </span>
-                  
+
                   {project.isOwner && (
                     <span className="text-[10px] font-semibold text-slate-400 bg-slate-50 px-2 py-0.5 border border-slate-100 rounded">
                       Lead
@@ -154,7 +238,7 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
 
                 {/* Tech tags */}
                 <div className="flex flex-wrap gap-1.5 mt-4">
-                  {project.tags.map((tag) => (
+                  {(project.requiredSkills || project.tags || []).map((tag) => (
                     <span
                       key={tag}
                       className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-50 text-slate-600 border border-slate-100"
@@ -185,20 +269,19 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
                       {project.teamSize} member{project.teamSize > 1 ? "s" : ""}
                     </span>
                   </div>
-                  <span className="text-slate-500 font-bold text-xs">{project.progress}%</span>
+                  <span className="text-slate-500 font-bold text-xs">{project.progress || 0}%</span>
                 </div>
 
                 {/* Progress Bar */}
                 <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mb-4">
                   <div
-                    className={`h-1.5 rounded-full ${
-                      project.status === "Completed"
+                    className={`h-1.5 rounded-full ${project.status === "Completed"
                         ? "bg-green-500"
                         : project.status === "Draft"
-                        ? "bg-slate-400"
-                        : "bg-blue-600"
-                    }`}
-                    style={{ width: `${project.progress}%` }}
+                          ? "bg-slate-400"
+                          : "bg-blue-600"
+                      }`}
+                    style={{ width: `${project.progress || 0}%` }}
                   />
                 </div>
 
@@ -214,12 +297,18 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
                     onClick={() => {
                       setEditingProject({
                         ...project,
-                        tags: project.tags.join(", ")
+                        tags: (project.requiredSkills || project.tags || []).join(", ")
                       });
                     }}
                     className="px-3.5 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 border border-blue-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                   >
                     Edit
+                  </button>
+                  <button
+                    onClick={() => handleDelete(project._id || project.id)}
+                    className="px-3.5 py-2 bg-red-50 text-red-600 hover:bg-red-100 border border-red-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                  >
+                    Delete
                   </button>
                 </div>
 
@@ -346,16 +435,15 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-end">
           {/* Backdrop Clicker */}
           <div className="absolute inset-0" onClick={() => setViewingProject(null)} />
-          
+
           <div className="relative bg-white h-full max-w-lg w-full shadow-2xl p-6 md:p-8 flex flex-col justify-between overflow-y-auto z-10 animate-slideLeft">
-            
+
             <div className="space-y-6">
               {/* Header */}
               <div className="flex items-start justify-between border-b border-slate-100 pb-4">
                 <div>
-                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${
-                    viewingProject.status === "Completed" ? "bg-green-50 text-green-600 border border-green-100" : "bg-blue-50 text-blue-600 border border-blue-100"
-                  }`}>
+                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${viewingProject.status === "Completed" ? "bg-green-50 text-green-600 border border-green-100" : "bg-blue-50 text-blue-600 border border-blue-100"
+                    }`}>
                     {viewingProject.status}
                   </span>
                   <h2 className="text-xl font-extrabold text-slate-900 mt-2">{viewingProject.title}</h2>
@@ -394,7 +482,7 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
               <div className="space-y-2">
                 <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Technologies Used</h4>
                 <div className="flex flex-wrap gap-2">
-                  {viewingProject.tags.map((tag) => (
+                  {(viewingProject.requiredSkills || viewingProject.tags || []).map((tag) => (
                     <span key={tag} className="px-3 py-1 bg-blue-50/50 text-blue-600 font-semibold text-xs border border-blue-100/50 rounded-full">
                       {tag}
                     </span>
@@ -433,9 +521,8 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
                     <span className="text-xs text-slate-500 font-medium line-through">Develop primary web interface templates</span>
                   </div>
                   <div className="flex items-center gap-2.5">
-                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                      viewingProject.progress >= 70 ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
-                    }`}>
+                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${viewingProject.progress >= 70 ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
+                      }`}>
                       {viewingProject.progress >= 70 ? "✓" : "2"}
                     </span>
                     <span className={`text-xs font-medium ${viewingProject.progress >= 70 ? "text-slate-500 line-through" : "text-slate-700"}`}>

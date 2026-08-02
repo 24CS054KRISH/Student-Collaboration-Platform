@@ -6,10 +6,10 @@ const authMiddleware = require('../middleware/authMiddleware');
 // POST /create
 router.post('/create', authMiddleware, async (req, res) => {
     try {
-        const { title, description, category, techStack, requiredSkills, teamSize, createdBy } = req.body;
+        const { title, description, category, techStack, requiredSkills, teamSize } = req.body;
 
         // Basic validation
-        if (!title || !description || !category || !createdBy) {
+        if (!title || !description || !category) {
             return res.status(400).json({
                 success: false,
                 message: "Missing required fields"
@@ -23,7 +23,7 @@ router.post('/create', authMiddleware, async (req, res) => {
             techStack,
             requiredSkills,
             teamSize,
-            createdBy
+            createdBy: req.user
         });
 
         await newProject.save();
@@ -84,12 +84,12 @@ router.get('/my/:userId', async (req, res) => {
     }
 });
 
-// DELETE /delete/:projectId
-router.delete('/delete/:projectId', authMiddleware, async (req, res) => {
+// DELETE /delete/:id
+router.delete('/delete/:id', authMiddleware, async (req, res) => {
     try {
-        const { projectId } = req.params;
+        const { id } = req.params;
 
-        const project = await Project.findById(projectId);
+        const project = await Project.findById(id);
         if (!project) {
             return res.status(404).json({
                 success: false,
@@ -97,7 +97,15 @@ router.delete('/delete/:projectId', authMiddleware, async (req, res) => {
             });
         }
 
-        await Project.findByIdAndDelete(projectId);
+        // Only the project creator can delete
+        if (project.createdBy.toString() !== req.user) {
+            return res.status(403).json({
+                success: false,
+                message: "Forbidden: You are not authorized to delete this project"
+            });
+        }
+
+        await Project.findByIdAndDelete(id);
 
         return res.status(200).json({
             success: true,
@@ -105,11 +113,87 @@ router.delete('/delete/:projectId', authMiddleware, async (req, res) => {
         });
     } catch (error) {
         console.error("Error deleting project:", error);
+        if (error.name === 'CastError') {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
         return res.status(500).json({
             success: false,
             message: "Server error during project deletion"
         });
     }
 });
+
+// PUT /update/:id
+const updateProject = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { title, description, category, teamSize, requiredSkills } = req.body;
+
+        // Find project
+        const project = await Project.findById(id);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        // Only the project creator can update
+        if (project.createdBy.toString() !== req.user) {
+            return res.status(403).json({
+                success: false,
+                message: "Forbidden: You are not authorized to update this project"
+            });
+        }
+
+        // Validate title cannot be empty
+        if (title !== undefined && (!title || title.trim() === "")) {
+            return res.status(400).json({
+                success: false,
+                message: "Title cannot be empty"
+            });
+        }
+
+        // Validate description cannot be empty
+        if (description !== undefined && (!description || description.trim() === "")) {
+            return res.status(400).json({
+                success: false,
+                message: "Description cannot be empty"
+            });
+        }
+
+        // Update only allowed fields
+        if (title !== undefined) project.title = title;
+        if (description !== undefined) project.description = description;
+        if (category !== undefined) project.category = category;
+        if (teamSize !== undefined) project.teamSize = teamSize;
+        if (requiredSkills !== undefined) project.requiredSkills = requiredSkills;
+
+        const updatedProject = await project.save();
+
+        return res.status(200).json({
+            success: true,
+            message: "Project updated successfully",
+            project: updatedProject
+        });
+    } catch (error) {
+        console.error("Error updating project:", error);
+        if (error.name === 'CastError') {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+        return res.status(500).json({
+            success: false,
+            message: "Server error during project update"
+        });
+    }
+};
+
+router.put('/update/:id', authMiddleware, updateProject);
 
 module.exports = router;

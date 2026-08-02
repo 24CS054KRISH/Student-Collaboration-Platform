@@ -1,7 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import MyProjects from "./MyProjects";
 import FindTeam from "./FindTeam";
 import Profile from "./Profile";
+import { getAllProjects, createProject } from "../api/projectApi";
 
 export default function Dashboard({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("Dashboard");
@@ -39,71 +40,25 @@ export default function Dashboard({ onNavigate }) {
     interests: ["Artificial Intelligence", "Web Accessibility", "Sustainable Tech", "Human-Computer Interaction"]
   });
 
-  // Mock Projects Data
-  const [projects, setProjects] = useState([
-    {
-      id: 1,
-      title: "AI Study Companion",
-      description: "Developing a web app that parses uploaded lecture slides and creates summary guides and quizzes automatically using LLMs.",
-      status: "In Progress", // In Progress, Planning, Completed
-      tags: ["React", "Python", "OpenAI API"],
-      teamSize: 3,
-      teamAvatars: [
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80"
-      ],
-      progress: 65,
-      role: "Lead Developer",
-      isOwner: true
-    },
-    {
-      id: 2,
-      title: "Campus Ride Sharing",
-      description: "Connecting students living in similar neighborhoods to share rides, reducing daily transit costs and carbon footprint.",
-      status: "Planning",
-      tags: ["React Native", "Node.js", "MongoDB"],
-      teamSize: 2,
-      teamAvatars: [
-        "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80"
-      ],
-      progress: 20,
-      role: "Backend Architect",
-      isOwner: false
-    },
-    {
-      id: 3,
-      title: "Book Exchange Market",
-      description: "A lightweight textbook marketplace for students to buy, sell, or trade reference books directly.",
-      status: "Completed",
-      tags: ["React", "Firebase", "Tailwind CSS"],
-      teamSize: 4,
-      teamAvatars: [
-        "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80",
-        "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=facearea&facepad=2&w=100&h=100&q=80"
-      ],
-      progress: 100,
-      role: "Frontend Contributor",
-      isOwner: false
-    },
-    {
-      id: 4,
-      title: "Campus Event Finder",
-      description: "A centralized dashboard compiling club events, hackathons, and athletic meets happening around campus.",
-      status: "Draft",
-      tags: ["Vite", "React", "Tailwind"],
-      teamSize: 1,
-      teamAvatars: [
-        "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80"
-      ],
-      progress: 10,
-      role: "Lead Author",
-      isOwner: true
+  const [projects, setProjects] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+
+  const fetchProjects = async () => {
+    try {
+      setLoading(true);
+      const data = await getAllProjects();
+      setProjects(data.projects || []);
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+    } finally {
+      setLoading(false);
     }
-  ]);
+  };
+
+  useEffect(() => {
+    fetchProjects();
+  }, []);
 
   // Mock Available Teams/Students for "Find Team"
   const [findTeamData, setFindTeamData] = useState([
@@ -179,53 +134,70 @@ export default function Dashboard({ onNavigate }) {
     )},
   ];
 
-  // Filtering projects list based on search and tags
+  // Filtering projects list based on search and tags/skills
   const filteredProjects = projects.filter((p) => {
-    const matchesSearch = p.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          p.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTag = selectedTagFilter === "All" || p.tags.includes(selectedTagFilter);
+    const matchesSearch = (p.title || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+                          (p.description || "").toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesTag = selectedTagFilter === "All" || 
+                       (p.requiredSkills && p.requiredSkills.includes(selectedTagFilter)) ||
+                       (p.tags && p.tags.includes(selectedTagFilter));
     return matchesSearch && matchesTag;
   });
 
   // Calculate high-level stats
-  const activeCount = projects.filter((p) => p.status === "In Progress" || p.status === "Planning").length;
+  const activeCount = projects.filter((p) => p.status === "In Progress" || p.status === "Planning" || p.status === "Open").length;
   const completedCount = projects.filter((p) => p.status === "Completed").length;
   const averageProgress = projects.length > 0 
-    ? Math.round(projects.reduce((sum, p) => sum + p.progress, 0) / projects.length)
+    ? Math.round(projects.reduce((sum, p) => sum + (p.progress || 0), 0) / projects.length)
     : 0;
 
-  // Handle creating a new project mock
-  const handleCreateProjectSubmit = (e) => {
+  // Handle creating a new project
+  const handleCreateProjectSubmit = async (e) => {
     e.preventDefault();
-    if (!newProject.title || !newProject.description) return;
+    
+    // Validate required fields
+    if (!newProject.title || !newProject.description || !newProject.tags) {
+      alert("Please fill in all required fields.");
+      return;
+    }
 
-    const tagsArray = newProject.tags
-      ? newProject.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0)
-      : ["General"];
+    // Convert Required Skills into an array using comma separation
+    const requiredSkills = newProject.tags
+      ? newProject.tags.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
 
-    const createdItem = {
-      id: projects.length + 1,
-      title: newProject.title,
-      description: newProject.description,
-      status: newProject.status,
-      tags: tagsArray,
-      teamSize: 1,
-      teamAvatars: [userProfile.avatarUrl],
-      progress: parseInt(newProject.progress) || 0,
-      role: newProject.role,
-      isOwner: true
-    };
+    try {
+      setSubmitting(true);
+      await createProject({
+        title: newProject.title,
+        description: newProject.description,
+        requiredSkills,
+        category: "General",
+        techStack: [],
+        teamSize: 2
+      });
 
-    setProjects([createdItem, ...projects]);
-    setShowCreateModal(false);
-    setNewProject({
-      title: "",
-      description: "",
-      tags: "",
-      role: "Lead",
-      status: "Planning",
-      progress: 0,
-    });
+      alert("Project Created Successfully");
+      setShowCreateModal(false);
+      
+      // Reset new project form state
+      setNewProject({
+        title: "",
+        description: "",
+        tags: "",
+        role: "Lead",
+        status: "Planning",
+        progress: 0,
+      });
+
+      // Refresh Dashboard project list
+      await fetchProjects();
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || error.message || "Failed to create project";
+      alert(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
 
@@ -520,19 +492,23 @@ export default function Dashboard({ onNavigate }) {
                 </button>
               </div>
 
-              {filteredProjects.length === 0 ? (
+              {loading ? (
+                <div className="flex justify-center items-center py-12">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  <span className="ml-2 text-sm font-medium text-slate-500 animate-pulse">Loading projects...</span>
+                </div>
+              ) : filteredProjects.length === 0 ? (
                 <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-12 text-center">
                   <svg className="w-12 h-12 text-slate-300 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M20 13V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7m16 0a2 2 0 01-2 2H6a2 2 0 01-2-2m16 0v5a2 2 0 01-2 2H6a2 2 0 01-2-2v-5" />
                   </svg>
-                  <p className="text-sm font-semibold text-slate-500">No matching projects found</p>
-                  <p className="text-xs font-medium text-slate-400 mt-1">Try resetting search filters or keywords</p>
+                  <p className="text-sm font-semibold text-slate-500">No projects found.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {filteredProjects.map((project) => (
                     <div
-                      key={project.id}
+                      key={project.id || project._id}
                       className="group bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col justify-between"
                     >
                       <div>
@@ -545,7 +521,7 @@ export default function Dashboard({ onNavigate }) {
                               ? "bg-amber-50 text-amber-600 border border-amber-100"
                               : "bg-blue-50 text-blue-600 border border-blue-100"
                           }`}>
-                            {project.status}
+                            {project.status || "Open"}
                           </span>
                           
                           {project.isOwner && (
@@ -559,18 +535,23 @@ export default function Dashboard({ onNavigate }) {
                         <h3 className="text-base font-extrabold text-slate-900 leading-snug group-hover:text-blue-600 transition-colors">
                           {project.title}
                         </h3>
+                        {project.category && (
+                          <div className="mt-1 text-xs font-semibold text-blue-600">
+                            Category: {project.category}
+                          </div>
+                        )}
                         <p className="text-xs text-slate-500 leading-relaxed font-normal mt-2 line-clamp-3">
                           {project.description}
                         </p>
 
-                        {/* Tags */}
+                        {/* Required Skills */}
                         <div className="flex flex-wrap gap-1.5 mt-4">
-                          {project.tags.map((tag) => (
+                          {(project.requiredSkills || project.tags || []).map((skill, index) => (
                             <span
-                              key={tag}
+                              key={index}
                               className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600"
                             >
-                              {tag}
+                              {skill}
                             </span>
                           ))}
                         </div>
@@ -581,7 +562,7 @@ export default function Dashboard({ onNavigate }) {
                         {/* Team Avatars & Progress */}
                         <div className="flex items-center justify-between text-xs font-semibold mb-3">
                           <div className="flex items-center -space-x-2">
-                            {project.teamAvatars.map((url, i) => (
+                            {project.teamAvatars && project.teamAvatars.map((url, i) => (
                               <img
                                 key={i}
                                 className="w-6 h-6 rounded-full border-2 border-white object-cover shadow-sm"
@@ -589,13 +570,18 @@ export default function Dashboard({ onNavigate }) {
                                 alt="Team Member"
                               />
                             ))}
-                            {project.teamSize > project.teamAvatars.length && (
+                            {project.teamAvatars && project.teamSize > project.teamAvatars.length && (
                               <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-[8px] border-2 border-white font-bold text-slate-500">
                                 +{project.teamSize - project.teamAvatars.length}
                               </span>
                             )}
+                            {(!project.teamAvatars || project.teamAvatars.length === 0) && (
+                              <span className="text-slate-500 text-xs font-medium">
+                                Team Size: {project.teamSize || 0}
+                              </span>
+                            )}
                           </div>
-                          <span className="text-slate-400 font-bold">{project.progress}%</span>
+                          <span className="text-slate-400 font-bold">{project.progress || 0}%</span>
                         </div>
 
                         {/* Progress Bar */}
@@ -604,7 +590,7 @@ export default function Dashboard({ onNavigate }) {
                             className={`h-1.5 rounded-full ${
                               project.status === "Completed" ? "bg-green-500" : "bg-blue-600"
                             }`}
-                            style={{ width: `${project.progress}%` }}
+                            style={{ width: `${project.progress || 0}%` }}
                           />
                         </div>
 
@@ -618,7 +604,8 @@ export default function Dashboard({ onNavigate }) {
                               onClick={() => {
                                 // Simple edit status modal trigger or status toggle mock
                                 const updatedProjects = projects.map((p) => {
-                                  if (p.id === project.id) {
+                                  const idMatch = (p.id && p.id === project.id) || (p._id && p._id === project._id);
+                                  if (idMatch) {
                                     const nextStatus = p.status === "Planning" ? "In Progress" : p.status === "In Progress" ? "Completed" : "Planning";
                                     const nextProgress = nextStatus === "Completed" ? 100 : nextStatus === "In Progress" ? 50 : 0;
                                     return { ...p, status: nextStatus, progress: nextProgress };
@@ -843,9 +830,10 @@ export default function Dashboard({ onNavigate }) {
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white font-bold hover:bg-blue-700 text-xs rounded-xl shadow-md transition-colors cursor-pointer"
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 text-white font-bold hover:bg-blue-700 text-xs rounded-xl shadow-md transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  Create Listing
+                  {submitting ? "Creating..." : "Create Listing"}
                 </button>
               </div>
             </form>
