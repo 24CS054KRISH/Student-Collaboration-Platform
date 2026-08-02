@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const Project = require('../models/Project');
+const authMiddleware = require('../middleware/authMiddleware');
 
 // POST /create
-router.post('/create', async (req, res) => {
+router.post('/create', authMiddleware, async (req, res) => {
     try {
         const { title, description, category, techStack, requiredSkills, teamSize, createdBy } = req.body;
 
@@ -84,7 +85,7 @@ router.get('/my/:userId', async (req, res) => {
 });
 
 // DELETE /delete/:projectId
-router.delete('/delete/:projectId', async (req, res) => {
+router.delete('/delete/:projectId', authMiddleware, async (req, res) => {
     try {
         const { projectId } = req.params;
 
