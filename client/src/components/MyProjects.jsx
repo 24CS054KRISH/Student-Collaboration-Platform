@@ -1,5 +1,7 @@
 import { useState, useEffect } from "react";
 import { getMyProjects, updateProject, deleteProject } from "../api/projectApi";
+import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
+import ProjectEditModal from "./ProjectEditModal";
 
 export default function MyProjects({ projects, setProjects, onCreateClick }) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -20,7 +22,8 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
       try {
         setLoading(true);
         const data = await getMyProjects(user._id);
-        setMyProjects(data.projects || []);
+        const mapped = (data.projects || []).map((p) => ({ ...p, isOwner: true }));
+        setMyProjects(mapped);
       } catch (error) {
         console.error("Error fetching user projects:", error);
       } finally {
@@ -47,31 +50,16 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
     return matchesSearch && matchesStatus;
   });
 
-  // Handle Edit submission
-  const handleEditSubmit = async (e) => {
-    e.preventDefault();
-    if (!editingProject.title || !editingProject.description) return;
-
-    // Convert tag input back to array if modified as string
-    const updatedTags = typeof editingProject.tags === "string"
-      ? editingProject.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0)
-      : editingProject.tags;
-
+  // Handle Edit saving
+  const handleEditSave = async (updatedFields) => {
     try {
-      const payload = {
-        title: editingProject.title,
-        description: editingProject.description,
-        category: editingProject.category,
-        teamSize: editingProject.teamSize,
-        requiredSkills: updatedTags
-      };
-
-      const response = await updateProject(editingProject._id || editingProject.id, payload);
+      const response = await updateProject(editingProject._id || editingProject.id, updatedFields);
 
       if (response.success) {
         const updated = {
           ...editingProject,
-          ...response.project
+          ...response.project,
+          isOwner: true
         };
 
         setMyProjects(myProjects.map((p) => {
@@ -89,6 +77,9 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
         }
 
         setEditingProject(null);
+        if (viewingProject && (viewingProject._id === updated._id || viewingProject.id === updated.id)) {
+          setViewingProject(updated);
+        }
         alert("Project updated successfully");
       } else {
         alert(response.message || "Failed to update project");
@@ -101,7 +92,7 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
 
   const handleDelete = async (projectId) => {
     if (!window.confirm("Are you sure you want to delete this project?")) {
-      return;
+      return false;
     }
 
     try {
@@ -117,12 +108,15 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
         }
 
         alert("Project deleted successfully");
+        return true;
       } else {
         alert(response.message || "Failed to delete project");
+        return false;
       }
     } catch (error) {
       console.error("Error deleting project:", error);
       alert(error.response?.data?.message || "Error deleting project. Please try again.");
+      return false;
     }
   };
 
@@ -322,239 +316,30 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
       {/* EDIT PROJECT MODAL OVERLAY */}
       {/* ============================================== */}
       {editingProject && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-scaleIn">
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="text-base font-extrabold text-slate-900">Edit Project Details</h3>
-              <button
-                onClick={() => setEditingProject(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-
-            <form onSubmit={handleEditSubmit} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Project Title</label>
-                <input
-                  type="text"
-                  required
-                  value={editingProject.title}
-                  onChange={(e) => setEditingProject({ ...editingProject, title: e.target.value })}
-                  className="block w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Description</label>
-                <textarea
-                  required
-                  rows="3"
-                  value={editingProject.description}
-                  onChange={(e) => setEditingProject({ ...editingProject, description: e.target.value })}
-                  className="block w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Tech Tags (Comma separated)</label>
-                <input
-                  type="text"
-                  value={editingProject.tags}
-                  onChange={(e) => setEditingProject({ ...editingProject, tags: e.target.value })}
-                  className="block w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Status</label>
-                  <select
-                    value={editingProject.status}
-                    onChange={(e) => setEditingProject({ ...editingProject, status: e.target.value })}
-                    className="block w-full border border-slate-200 rounded-xl px-3 py-2.5 text-xs text-slate-900 bg-white focus:outline-none focus:border-blue-600"
-                  >
-                    <option value="Planning">Planning</option>
-                    <option value="In Progress">In Progress</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Draft">Draft</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Progress (%)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max="100"
-                    value={editingProject.progress}
-                    onChange={(e) => setEditingProject({ ...editingProject, progress: e.target.value })}
-                    className="block w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Team Size</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={editingProject.teamSize}
-                  onChange={(e) => setEditingProject({ ...editingProject, teamSize: parseInt(e.target.value) || 1 })}
-                  className="block w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div className="pt-4 border-t border-slate-100 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingProject(null)}
-                  className="px-4 py-2 border border-slate-200 text-slate-700 font-bold hover:bg-slate-50 text-xs rounded-xl transition-colors cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white font-bold hover:bg-blue-700 text-xs rounded-xl shadow-md transition-colors cursor-pointer"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ProjectEditModal
+          project={editingProject}
+          onClose={() => setEditingProject(null)}
+          onSave={handleEditSave}
+        />
       )}
 
       {/* ============================================== */}
       {/* VIEW DETAILS DRAWER / MODAL OVERLAY */}
       {/* ============================================== */}
       {viewingProject && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-end">
-          {/* Backdrop Clicker */}
-          <div className="absolute inset-0" onClick={() => setViewingProject(null)} />
-
-          <div className="relative bg-white h-full max-w-lg w-full shadow-2xl p-6 md:p-8 flex flex-col justify-between overflow-y-auto z-10 animate-slideLeft">
-
-            <div className="space-y-6">
-              {/* Header */}
-              <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-                <div>
-                  <span className={`px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider uppercase ${viewingProject.status === "Completed" ? "bg-green-50 text-green-600 border border-green-100" : "bg-blue-50 text-blue-600 border border-blue-100"
-                    }`}>
-                    {viewingProject.status}
-                  </span>
-                  <h2 className="text-xl font-extrabold text-slate-900 mt-2">{viewingProject.title}</h2>
-                  <p className="text-xs font-bold text-slate-400 mt-0.5">Workspace Role: {viewingProject.role || "Lead"}</p>
-                </div>
-                <button
-                  onClick={() => setViewingProject(null)}
-                  className="text-slate-400 hover:text-slate-600 p-1.5 bg-slate-50 hover:bg-slate-100 rounded-lg cursor-pointer"
-                >
-                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-
-              {/* Progress Summary */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/40">
-                <div className="flex items-center justify-between text-xs font-semibold mb-2">
-                  <span className="text-slate-500">Project Completion</span>
-                  <span className="text-slate-800 font-bold">{viewingProject.progress}%</span>
-                </div>
-                <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
-                  <div className="bg-blue-600 h-2 rounded-full" style={{ width: `${viewingProject.progress}%` }} />
-                </div>
-              </div>
-
-              {/* Description */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Description</h4>
-                <p className="text-xs text-slate-600 leading-relaxed font-normal bg-slate-50/50 p-3.5 border border-slate-100 rounded-xl">
-                  {viewingProject.description}
-                </p>
-              </div>
-
-              {/* Technology Tags */}
-              <div className="space-y-2">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Technologies Used</h4>
-                <div className="flex flex-wrap gap-2">
-                  {(viewingProject.requiredSkills || viewingProject.tags || []).map((tag) => (
-                    <span key={tag} className="px-3 py-1 bg-blue-50/50 text-blue-600 font-semibold text-xs border border-blue-100/50 rounded-full">
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-              </div>
-
-              {/* Team Members */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Team Members ({viewingProject.teamSize})</h4>
-                <div className="space-y-2 max-h-36 overflow-y-auto">
-                  {viewingProject.teamAvatars && viewingProject.teamAvatars.map((url, i) => (
-                    <div key={i} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
-                      <img src={url} alt="Member" className="w-7 h-7 rounded-full object-cover" />
-                      <div>
-                        <p className="text-xs font-bold text-slate-800">
-                          {i === 0 ? "You (Alex Rivera)" : `Teammate #${i}`}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-semibold">{i === 0 ? "Lead Developer" : "Contributor"}</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Mock Roadmap Milestones */}
-              <div className="space-y-3">
-                <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Milestones & Roadmap</h4>
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-[10px] font-bold">✓</span>
-                    <span className="text-xs text-slate-500 font-medium line-through">Define project structure and goals</span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-[10px] font-bold">✓</span>
-                    <span className="text-xs text-slate-500 font-medium line-through">Develop primary web interface templates</span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${viewingProject.progress >= 70 ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
-                      }`}>
-                      {viewingProject.progress >= 70 ? "✓" : "2"}
-                    </span>
-                    <span className={`text-xs font-medium ${viewingProject.progress >= 70 ? "text-slate-500 line-through" : "text-slate-700"}`}>
-                      Integrate dynamic task tracking boards
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2.5">
-                    <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] font-bold">3</span>
-                    <span className="text-xs text-slate-400 font-medium">Final review and deployment validation</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Drawer Actions */}
-            <div className="pt-6 border-t border-slate-100 flex gap-3 mt-6">
-              <button
-                onClick={() => alert(`Collaborative Slack workspace for "${viewingProject.title}" is offline for maintenance.`)}
-                className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-colors cursor-pointer text-center"
-              >
-                Launch Workspace
-              </button>
-              <button
-                onClick={() => setViewingProject(null)}
-                className="px-4 py-3 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-              >
-                Close Drawer
-              </button>
-            </div>
-
-          </div>
-        </div>
+        <ProjectDetailsDrawer
+          project={viewingProject}
+          onClose={() => setViewingProject(null)}
+          onEdit={(proj) => {
+            setViewingProject(null);
+            setEditingProject(proj);
+          }}
+          onDelete={async (id) => {
+            if (await handleDelete(id)) {
+              setViewingProject(null);
+            }
+          }}
+        />
       )}
 
     </div>

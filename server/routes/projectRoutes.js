@@ -45,7 +45,7 @@ router.post('/create', authMiddleware, async (req, res) => {
 // GET /all
 router.get('/all', async (req, res) => {
     try {
-        const projects = await Project.find().sort({ createdAt: -1 });
+        const projects = await Project.find().populate('createdBy', 'fullName email').sort({ createdAt: -1 });
         const totalProjects = projects.length;
 
         return res.status(200).json({
@@ -67,7 +67,7 @@ router.get('/my/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
 
-        const projects = await Project.find({ createdBy: userId }).sort({ createdAt: -1 });
+        const projects = await Project.find({ createdBy: userId }).populate('createdBy', 'fullName email').sort({ createdAt: -1 });
         const totalProjects = projects.length;
 
         return res.status(200).json({
@@ -130,7 +130,7 @@ router.delete('/delete/:id', authMiddleware, async (req, res) => {
 const updateProject = async (req, res) => {
     try {
         const { id } = req.params;
-        const { title, description, category, teamSize, requiredSkills } = req.body;
+        const { title, description, category, teamSize, requiredSkills, status, progress } = req.body;
 
         // Find project
         const project = await Project.findById(id);
@@ -171,6 +171,8 @@ const updateProject = async (req, res) => {
         if (category !== undefined) project.category = category;
         if (teamSize !== undefined) project.teamSize = teamSize;
         if (requiredSkills !== undefined) project.requiredSkills = requiredSkills;
+        if (status !== undefined) project.status = status;
+        if (progress !== undefined) project.progress = progress;
 
         const updatedProject = await project.save();
 

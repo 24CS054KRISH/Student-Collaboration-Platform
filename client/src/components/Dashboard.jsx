@@ -2,7 +2,9 @@ import { useState, useEffect } from "react";
 import MyProjects from "./MyProjects";
 import FindTeam from "./FindTeam";
 import Profile from "./Profile";
-import { getAllProjects, createProject } from "../api/projectApi";
+import { getAllProjects, createProject, updateProject, deleteProject } from "../api/projectApi";
+import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
+import ProjectEditModal from "./ProjectEditModal";
 
 export default function Dashboard({ onNavigate }) {
   const [activeTab, setActiveTab] = useState("Dashboard");
@@ -10,6 +12,8 @@ export default function Dashboard({ onNavigate }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTagFilter, setSelectedTagFilter] = useState("All");
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [editingProject, setEditingProject] = useState(null);
+  const [viewingProject, setViewingProject] = useState(null);
   
   // New project form state
   const [newProject, setNewProject] = useState({
@@ -48,7 +52,15 @@ export default function Dashboard({ onNavigate }) {
     try {
       setLoading(true);
       const data = await getAllProjects();
-      setProjects(data.projects || []);
+      const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
+      const mappedProjects = (data.projects || []).map((p) => {
+        const ownerId = p.createdBy && typeof p.createdBy === "object" ? p.createdBy._id : p.createdBy;
+        return {
+          ...p,
+          isOwner: ownerId === loggedInUser?._id
+        };
+      });
+      setProjects(mappedProjects);
     } catch (error) {
       console.error("Error fetching projects:", error);
     } finally {
@@ -144,11 +156,22 @@ export default function Dashboard({ onNavigate }) {
     return matchesSearch && matchesTag;
   });
 
+  const userProjects = projects.filter((p) => {
+    const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const ownerId = p.createdBy && typeof p.createdBy === "object" ? p.createdBy._id : p.createdBy;
+    return p.isOwner || (loggedInUser?._id && ownerId === loggedInUser._id);
+  });
+
   // Calculate high-level stats
-  const activeCount = projects.filter((p) => p.status === "In Progress" || p.status === "Planning" || p.status === "Open").length;
-  const completedCount = projects.filter((p) => p.status === "Completed").length;
-  const averageProgress = projects.length > 0 
-    ? Math.round(projects.reduce((sum, p) => sum + (p.progress || 0), 0) / projects.length)
+  const activeCount = userProjects.filter((p) => p.status === "In Progress" || p.status === "Planning" || p.status === "Open" || !p.status).length;
+  const completedCount = userProjects.filter((p) => p.status === "Completed").length;
+
+  // TODO: Update pendingRequests count once the Join Request module is implemented
+  const pendingRequests = 0;
+
+  const totalTeamMembers = userProjects.reduce((sum, p) => sum + (Number(p.teamSize) || 0), 0);
+  const averageProgress = userProjects.length > 0 
+    ? Math.round(userProjects.reduce((sum, p) => sum + (Number(p.progress) || 0), 0) / userProjects.length)
     : 0;
 
   // Handle creating a new project
@@ -197,6 +220,53 @@ export default function Dashboard({ onNavigate }) {
       alert(errorMessage);
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleEditSave = async (updatedFields) => {
+    try {
+      const response = await updateProject(editingProject._id || editingProject.id, updatedFields);
+      if (response.success) {
+        await fetchProjects();
+        setEditingProject(null);
+        if (viewingProject && (viewingProject._id === editingProject._id || viewingProject.id === editingProject.id)) {
+          const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
+          const updatedOwnerId = response.project.createdBy && typeof response.project.createdBy === "object" ? response.project.createdBy._id : response.project.createdBy;
+          const updated = {
+            ...editingProject,
+            ...response.project,
+            isOwner: updatedOwnerId === loggedInUser?._id
+          };
+          setViewingProject(updated);
+        }
+        alert("Project updated successfully");
+      } else {
+        alert(response.message || "Failed to update project");
+      }
+    } catch (error) {
+      console.error("Error updating project:", error);
+      alert(error.response?.data?.message || "Error updating project. Please try again.");
+    }
+  };
+
+  const handleDelete = async (projectId) => {
+    if (!window.confirm("Are you sure you want to delete this project?")) {
+      return false;
+    }
+    try {
+      const response = await deleteProject(projectId);
+      if (response.success) {
+        await fetchProjects();
+        alert("Project deleted successfully");
+        return true;
+      } else {
+        alert(response.message || "Failed to delete project");
+        return false;
+      }
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      alert(error.response?.data?.message || "Error deleting project. Please try again.");
+      return false;
     }
   };
 
@@ -422,7 +492,7 @@ export default function Dashboard({ onNavigate }) {
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6 flex items-center justify-between hover:shadow-md transition-shadow">
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Team Members</p>
-                  <h3 className="text-3xl font-extrabold text-slate-800 mt-2">8</h3>
+                  <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{totalTeamMembers}</h3>
                   <div className="flex items-center -space-x-1.5 mt-2">
                     <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=50" alt="" />
                     <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=50" alt="" />
@@ -439,10 +509,11 @@ export default function Dashboard({ onNavigate }) {
               </div>
 
               {/* Stat Card 3: Pending Applications */}
+              {/* TODO: Display the number of pending join requests once the Join Request module is implemented */}
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6 flex items-center justify-between hover:shadow-md transition-shadow">
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Requests</p>
-                  <h3 className="text-3xl font-extrabold text-slate-800 mt-2">2</h3>
+                  <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{pendingRequests}</h3>
                   <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping mr-0.5" />
                     <span>Requires attention</span>
@@ -596,7 +667,10 @@ export default function Dashboard({ onNavigate }) {
 
                         {/* Action Buttons */}
                         <div className="flex gap-2">
-                          <button className="flex-1 text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl transition-colors cursor-pointer">
+                          <button
+                            onClick={() => setViewingProject(project)}
+                            className="flex-1 text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl transition-colors cursor-pointer"
+                          >
                             View Work
                           </button>
                           {project.isOwner && (
@@ -839,6 +913,36 @@ export default function Dashboard({ onNavigate }) {
             </form>
           </div>
         </div>
+      )}
+
+      {/* ============================================== */}
+      {/* EDIT PROJECT MODAL OVERLAY */}
+      {/* ============================================== */}
+      {editingProject && (
+        <ProjectEditModal
+          project={editingProject}
+          onClose={() => setEditingProject(null)}
+          onSave={handleEditSave}
+        />
+      )}
+
+      {/* ============================================== */}
+      {/* VIEW DETAILS DRAWER / MODAL OVERLAY */}
+      {/* ============================================== */}
+      {viewingProject && (
+        <ProjectDetailsDrawer
+          project={viewingProject}
+          onClose={() => setViewingProject(null)}
+          onEdit={(proj) => {
+            setViewingProject(null);
+            setEditingProject(proj);
+          }}
+          onDelete={async (id) => {
+            if (await handleDelete(id)) {
+              setViewingProject(null);
+            }
+          }}
+        />
       )}
       
     </div>
