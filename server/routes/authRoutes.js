@@ -108,4 +108,48 @@ router.post('/login', async (req, res) => {
     }
 });
 
+const authMiddleware = require('../middleware/authMiddleware');
+
+// GET /me - Verify current user JWT token and return session user profile
+router.get('/me', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user).select('-password');
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+        return res.status(200).json({
+            success: true,
+            user
+        });
+    } catch (error) {
+        console.error("Error fetching current user session:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error during session verification"
+        });
+    }
+});
+
+// GET /users - Fetch all registered users
+router.get('/users', async (req, res) => {
+    try {
+        const users = await User.find({}, '-password');
+        return res.status(200).json({
+            success: true,
+            users
+        });
+    } catch (error) {
+        console.error("Error fetching users:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error fetching users"
+        });
+    }
+});
+
 module.exports = router;
+
+

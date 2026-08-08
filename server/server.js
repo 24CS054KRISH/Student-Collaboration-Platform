@@ -1,5 +1,6 @@
 const authRoutes = require("./routes/authRoutes");
 const projectRoutes = require("./routes/projectRoutes");
+const connectionRoutes = require("./routes/connectionRoutes");
 const express = require("express");
 const cors = require("cors");
 const mongoose = require("mongoose");
@@ -11,6 +12,8 @@ app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
+app.use("/api/connections", connectionRoutes);
+
 
 app.get("/", (req, res) => {
     res.send("Student Collaboration Platform API Running 🚀");

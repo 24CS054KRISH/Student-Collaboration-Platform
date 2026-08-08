@@ -27,3 +27,31 @@ export const loginUser = async (userData) => {
         throw error;
     }
 };
+
+/**
+ * Fetch all registered users.
+ * @returns {Promise<Object>} The API response data containing users array
+ */
+export const getAllUsers = async () => {
+    try {
+        const response = await API.get('/auth/users');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Verify current user session via JWT token.
+ * @returns {Promise<Object>} The API response data containing current user
+ */
+export const verifyMe = async () => {
+    try {
+        const response = await API.get('/auth/me');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+

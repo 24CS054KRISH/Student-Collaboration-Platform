@@ -1,13 +1,19 @@
 import { useState, useEffect } from "react";
 import MyProjects from "./MyProjects";
 import FindTeam from "./FindTeam";
+import PendingRequests from "./PendingRequests";
+import MyConnections from "./MyConnections";
 import Profile from "./Profile";
+
+
 import { getAllProjects, createProject, updateProject, deleteProject } from "../api/projectApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
 
 export default function Dashboard({ onNavigate }) {
-  const [activeTab, setActiveTab] = useState("Dashboard");
+  const [activeTab, setActiveTab] = useState(() => {
+    return localStorage.getItem("activeTab") || "Dashboard";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTagFilter, setSelectedTagFilter] = useState("All");
@@ -15,6 +21,19 @@ export default function Dashboard({ onNavigate }) {
   const [editingProject, setEditingProject] = useState(null);
   const [viewingProject, setViewingProject] = useState(null);
   
+  const handleTabChange = (tabName) => {
+    setActiveTab(tabName);
+    localStorage.setItem("activeTab", tabName);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    localStorage.removeItem("currentPage");
+    localStorage.removeItem("activeTab");
+    if (onNavigate) onNavigate("login");
+  };
+
   // New project form state
   const [newProject, setNewProject] = useState({
     title: "",
@@ -25,24 +44,44 @@ export default function Dashboard({ onNavigate }) {
     progress: 0,
   });
 
-  // Mock User Data
+  // User Data State
   const [userProfile, setUserProfile] = useState({
     name: "Alex Rivera",
     email: "alex.rivera@university.edu",
     major: "Computer Science & Engineering",
     year: "Junior (3rd Year)",
-    bio: "Passionate web developer focused on building collaborative, user-centric apps. Looking to partner on AI development and sustainability initiatives.",
-    skills: ["React", "JavaScript", "Tailwind CSS", "Python", "Node.js", "UI/UX Design"],
+    bio: "Passionate web developer focused on building collaborative, user-centric apps.",
+    skills: ["React", "JavaScript", "Tailwind CSS", "Python", "Node.js"],
     projectsCount: 3,
     avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
     college: "Stanford University",
-    about: "I am a junior computer science student passionate about React, frontend architecture, and developer tools. I enjoy participating in campus hackathons and building open-source projects. In my spare time, I write engineering blog posts and mentor freshman students in web technologies.",
-    githubUrl: "https://github.com/alexrivera",
-    linkedinUrl: "https://linkedin.com/in/alexrivera",
-    portfolioUrl: "https://alexrivera.dev",
-    achievements: ["Winner, Local Hackathon 2026", "Dean's List (GPA 3.9/4.0)", "Open Source Contributor (Vite Dev Server)"],
-    interests: ["Artificial Intelligence", "Web Accessibility", "Sustainable Tech", "Human-Computer Interaction"]
+    about: "I am a student passionate about web architecture and open-source software.",
+    githubUrl: "https://github.com",
+    linkedinUrl: "https://linkedin.com",
+    portfolioUrl: "https://portfolio.dev",
+    achievements: ["Hackathon Participant", "Dean's List"],
+    interests: ["Artificial Intelligence", "Web Accessibility", "Open Source"]
   });
+
+  useEffect(() => {
+    try {
+      const savedUser = localStorage.getItem("user");
+      if (savedUser) {
+        const u = JSON.parse(savedUser);
+        const name = u.fullName || u.name || "Student";
+        setUserProfile((prev) => ({
+          ...prev,
+          name: name,
+          email: u.email || prev.email,
+          college: u.college || prev.college,
+          major: u.branch || prev.major,
+          avatarUrl: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`
+        }));
+      }
+    } catch (e) {
+      console.error("Error setting user profile in dashboard:", e);
+    }
+  }, []);
 
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,6 +110,7 @@ export default function Dashboard({ onNavigate }) {
   useEffect(() => {
     fetchProjects();
   }, []);
+
 
   // Mock Available Teams/Students for "Find Team"
   const [findTeamData, setFindTeamData] = useState([
@@ -133,7 +173,19 @@ export default function Dashboard({ onNavigate }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
       </svg>
     )},
+    { name: "Pending Requests", icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+      </svg>
+    )},
+    { name: "My Connections", icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+      </svg>
+    )},
     { name: "Profile", icon: (
+
+
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
       </svg>
@@ -331,7 +383,7 @@ export default function Dashboard({ onNavigate }) {
                 <button
                   key={item.name}
                   onClick={() => {
-                    setActiveTab(item.name);
+                    handleTabChange(item.name);
                     setSidebarOpen(false); // Close on mobile navigation
                   }}
                   className={`w-full flex items-center gap-3 px-4 py-3 text-sm font-semibold rounded-xl transition-all duration-200 cursor-pointer ${
@@ -368,7 +420,7 @@ export default function Dashboard({ onNavigate }) {
           
           {/* Logout Button */}
           <button
-            onClick={() => onNavigate("landing")}
+            onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors cursor-pointer"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -377,6 +429,7 @@ export default function Dashboard({ onNavigate }) {
             Logout
           </button>
         </div>
+
       </aside>
 
       {/* MOBILE BACKDROP OVERLAY */}
@@ -724,11 +777,27 @@ export default function Dashboard({ onNavigate }) {
         )}
 
         {/* ============================================== */}
+        {/* TAB CONTENT: PENDING REQUESTS */}
+        {/* ============================================== */}
+        {activeTab === "Pending Requests" && (
+          <PendingRequests />
+        )}
+
+        {/* ============================================== */}
+        {/* TAB CONTENT: MY CONNECTIONS */}
+        {/* ============================================== */}
+        {activeTab === "My Connections" && (
+          <MyConnections />
+        )}
+
+        {/* ============================================== */}
         {/* TAB CONTENT: PROFILE */}
         {/* ============================================== */}
         {activeTab === "Profile" && (
           <Profile userProfile={userProfile} setUserProfile={setUserProfile} projects={projects} />
         )}
+
+
 
         {/* ============================================== */}
         {/* TAB CONTENT: SETTINGS */}
