@@ -54,4 +54,16 @@ export const verifyMe = async () => {
     }
 };
 
-
+/**
+ * Update current user profile.
+ * @param {Object} profileData - Updated user profile fields
+ * @returns {Promise<Object>} The API response data containing updated user details
+ */
+export const updateProfile = async (profileData) => {
+    try {
+        const response = await API.put('/auth/profile', profileData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

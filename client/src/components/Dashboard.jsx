@@ -45,42 +45,66 @@ export default function Dashboard({ onNavigate }) {
     progress: 0,
   });
 
-  // User Data State
-  const [userProfile, setUserProfile] = useState({
-    name: "Alex Rivera",
-    email: "alex.rivera@university.edu",
-    major: "Computer Science & Engineering",
-    year: "Junior (3rd Year)",
-    bio: "Passionate web developer focused on building collaborative, user-centric apps.",
-    skills: ["React", "JavaScript", "Tailwind CSS", "Python", "Node.js"],
-    projectsCount: 3,
-    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=facearea&facepad=2&w=256&h=256&q=80",
-    college: "Stanford University",
-    about: "I am a student passionate about web architecture and open-source software.",
-    githubUrl: "https://github.com",
-    linkedinUrl: "https://linkedin.com",
-    portfolioUrl: "https://portfolio.dev",
-    achievements: ["Hackathon Participant", "Dean's List"],
-    interests: ["Artificial Intelligence", "Web Accessibility", "Open Source"]
-  });
-
-  useEffect(() => {
+  // Helper to parse stored user from localStorage
+  const getUserProfileFromStorage = () => {
     try {
       const savedUser = localStorage.getItem("user");
       if (savedUser) {
         const u = JSON.parse(savedUser);
         const name = u.fullName || u.name || "Student";
-        setUserProfile((prev) => ({
-          ...prev,
+        return {
           name: name,
-          email: u.email || prev.email,
-          college: u.college || prev.college,
-          major: u.branch || prev.major,
-          avatarUrl: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`
-        }));
+          email: u.email || "",
+          college: u.college || "",
+          major: u.branch || "",
+          year: u.year || "",
+          bio: u.bio || "",
+          skills: Array.isArray(u.skills) ? u.skills : [],
+          projectsCount: 0,
+          avatarUrl: u.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`,
+          about: u.bio || "",
+          githubUrl: u.github || "",
+          linkedinUrl: u.linkedin || "",
+          portfolioUrl: u.portfolio || "",
+          achievements: [],
+          interests: []
+        };
       }
     } catch (e) {
-      console.error("Error setting user profile in dashboard:", e);
+      console.error("Error reading user profile from storage:", e);
+    }
+    return null;
+  };
+
+  // User Data State initialized dynamically
+  const [userProfile, setUserProfile] = useState(() => {
+    return getUserProfileFromStorage() || {
+      name: "Student",
+      email: "",
+      major: "",
+      year: "",
+      bio: "",
+      skills: [],
+      projectsCount: 0,
+      avatarUrl: "https://ui-avatars.com/api/?name=Student&background=0D8ABC&color=fff",
+      college: "",
+      about: "",
+      githubUrl: "",
+      linkedinUrl: "",
+      portfolioUrl: "",
+      achievements: [],
+      interests: []
+    };
+  });
+
+  useEffect(() => {
+    const updated = getUserProfileFromStorage();
+    if (updated) {
+      setUserProfile((prev) => ({
+        ...prev,
+        ...updated,
+        projectsCount: prev.projectsCount || 0
+      }));
     }
   }, []);
 

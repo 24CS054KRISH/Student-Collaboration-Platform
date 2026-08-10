@@ -150,6 +150,50 @@ router.get('/users', async (req, res) => {
     }
 });
 
+// PUT /profile - Update current user profile
+router.put('/profile', authMiddleware, async (req, res) => {
+    try {
+        const { fullName, college, branch, year, bio, github, linkedin, portfolio, skills } = req.body;
+
+        const user = await User.findById(req.user);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+
+        if (fullName !== undefined) user.fullName = fullName;
+        if (college !== undefined) user.college = college;
+        if (branch !== undefined) user.branch = branch;
+        if (year !== undefined) user.year = year;
+        if (bio !== undefined) user.bio = bio;
+        if (github !== undefined) user.github = github;
+        if (linkedin !== undefined) user.linkedin = linkedin;
+        if (portfolio !== undefined) user.portfolio = portfolio;
+        if (skills !== undefined) {
+            user.skills = Array.isArray(skills)
+                ? skills
+                : (typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : []);
+        }
+
+        await user.save();
+
+        const userObj = user.toObject();
+        delete userObj.password;
+
+        return res.status(200).json({
+            success: true,
+            message: "Profile updated successfully",
+            user: userObj
+        });
+    } catch (error) {
+        console.error("Error updating user profile:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error during profile update"
+        });
+    }
+});
+
 module.exports = router;
-
-

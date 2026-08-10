@@ -1,8 +1,10 @@
 import { useState } from "react";
+import { updateProfile } from "../api/authApi";
 
 export default function Profile({ userProfile, setUserProfile, projects }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [newSkillInput, setNewSkillInput] = useState("");
+  const [saving, setSaving] = useState(false);
   
   // Edit Form state
   const [editForm, setEditForm] = useState({
@@ -22,15 +24,15 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
   // Open Edit Modal and prefill data
   const handleOpenEdit = () => {
     setEditForm({
-      name: userProfile.name,
-      college: userProfile.college || "Stanford University",
-      major: userProfile.major,
-      year: userProfile.year,
-      bio: userProfile.bio,
-      about: userProfile.about || "Describe your background here...",
-      githubUrl: userProfile.githubUrl || "https://github.com/alexrivera",
-      linkedinUrl: userProfile.linkedinUrl || "https://linkedin.com/in/alexrivera",
-      portfolioUrl: userProfile.portfolioUrl || "https://alexrivera.dev",
+      name: userProfile.name || "",
+      college: userProfile.college || "",
+      major: userProfile.major || "",
+      year: userProfile.year || "",
+      bio: userProfile.bio || "",
+      about: userProfile.about || "",
+      githubUrl: userProfile.githubUrl || "",
+      linkedinUrl: userProfile.linkedinUrl || "",
+      portfolioUrl: userProfile.portfolioUrl || "",
       achievements: userProfile.achievements ? userProfile.achievements.join(", ") : "",
       interests: userProfile.interests ? userProfile.interests.join(", ") : ""
     });
@@ -38,8 +40,9 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
   };
 
   // Submit edit form
-  const handleEditSubmit = (e) => {
+  const handleEditSubmit = async (e) => {
     e.preventDefault();
+    setSaving(true);
     
     const achievementsArray = editForm.achievements
       ? editForm.achievements.split(",").map((item) => item.trim()).filter((item) => item.length > 0)
@@ -49,43 +52,98 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
       ? editForm.interests.split(",").map((item) => item.trim()).filter((item) => item.length > 0)
       : [];
 
-    setUserProfile({
-      ...userProfile,
-      name: editForm.name,
-      college: editForm.college,
-      major: editForm.major,
-      year: editForm.year,
-      bio: editForm.bio,
-      about: editForm.about,
-      githubUrl: editForm.githubUrl,
-      linkedinUrl: editForm.linkedinUrl,
-      portfolioUrl: editForm.portfolioUrl,
-      achievements: achievementsArray,
-      interests: interestsArray
-    });
+    try {
+      const submittedBio = editForm.bio || editForm.about;
 
-    setShowEditModal(false);
+      const response = await updateProfile({
+        fullName: editForm.name,
+        college: editForm.college,
+        branch: editForm.major,
+        year: editForm.year,
+        bio: submittedBio,
+        github: editForm.githubUrl,
+        linkedin: editForm.linkedinUrl,
+        portfolio: editForm.portfolioUrl,
+        skills: userProfile.skills
+      });
+
+      if (response.success && response.user) {
+        const u = response.user;
+
+        // Save latest user object returned by backend into localStorage
+        localStorage.setItem("user", JSON.stringify(u));
+
+        const updatedBio = u.bio !== undefined && u.bio !== null ? u.bio : submittedBio;
+
+        // Immediately update parent state so both header bio and Section 2 About re-render instantly
+        setUserProfile((prev) => ({
+          ...prev,
+          name: u.fullName || editForm.name || prev.name,
+          college: u.college !== undefined ? u.college : editForm.college,
+          major: u.branch !== undefined ? u.branch : editForm.major,
+          year: u.year !== undefined ? u.year : editForm.year,
+          bio: updatedBio,
+          about: updatedBio,
+          githubUrl: u.github !== undefined ? u.github : editForm.githubUrl,
+          linkedinUrl: u.linkedin !== undefined ? u.linkedin : editForm.linkedinUrl,
+          portfolioUrl: u.portfolio !== undefined ? u.portfolio : editForm.portfolioUrl,
+          skills: Array.isArray(u.skills) ? u.skills : prev.skills,
+          achievements: achievementsArray,
+          interests: interestsArray
+        }));
+
+        alert("Profile updated successfully");
+        setShowEditModal(false);
+      }
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      alert(error.response?.data?.message || "Failed to update profile");
+    } finally {
+      setSaving(false);
+    }
   };
 
   // Add Skill
-  const handleAddSkillSubmit = (e) => {
+  const handleAddSkillSubmit = async (e) => {
     e.preventDefault();
-    if (newSkillInput.trim() && !userProfile.skills.includes(newSkillInput.trim())) {
-      setUserProfile({
-        ...userProfile,
-        skills: [...userProfile.skills, newSkillInput.trim()]
-      });
-      setNewSkillInput("");
+    const skillToAdd = newSkillInput.trim();
+    if (skillToAdd && !userProfile.skills.includes(skillToAdd)) {
+      const updatedSkills = [...userProfile.skills, skillToAdd];
+      try {
+        const response = await updateProfile({ skills: updatedSkills });
+        if (response.success && response.user) {
+          localStorage.setItem("user", JSON.stringify(response.user));
+          setUserProfile((prev) => ({
+            ...prev,
+            skills: response.user.skills || updatedSkills
+          }));
+          setNewSkillInput("");
+        }
+      } catch (error) {
+        console.error("Error updating skills:", error);
+        alert(error.response?.data?.message || "Failed to add skill");
+      }
     }
   };
 
   // Remove Skill
-  const handleRemoveSkill = (skillToRemove) => {
-    setUserProfile({
-      ...userProfile,
-      skills: userProfile.skills.filter((s) => s !== skillToRemove)
-    });
+  const handleRemoveSkill = async (skillToRemove) => {
+    const updatedSkills = userProfile.skills.filter((s) => s !== skillToRemove);
+    try {
+      const response = await updateProfile({ skills: updatedSkills });
+      if (response.success && response.user) {
+        localStorage.setItem("user", JSON.stringify(response.user));
+        setUserProfile((prev) => ({
+          ...prev,
+          skills: response.user.skills || updatedSkills
+        }));
+      }
+    } catch (error) {
+      console.error("Error removing skill:", error);
+      alert(error.response?.data?.message || "Failed to remove skill");
+    }
   };
+
 
   return (
     <div className="space-y-8 animate-fadeIn">
@@ -120,7 +178,7 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                   </svg>
-                  {userProfile.college || "Stanford University"}
+                  {userProfile.college || "University Student"}
                 </span>
                 <span className="w-1.5 h-1.5 bg-slate-300 rounded-full my-auto hidden sm:inline" />
                 <span className="flex items-center gap-1">
