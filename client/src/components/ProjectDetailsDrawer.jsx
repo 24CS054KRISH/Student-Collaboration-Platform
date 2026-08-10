@@ -1,6 +1,6 @@
 import React from "react";
 
-export default function ProjectDetailsDrawer({ project, onClose, onEdit, onDelete }) {
+export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, onClose, onEdit, onDelete }) {
   if (!project) return null;
 
   const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
@@ -197,12 +197,38 @@ export default function ProjectDetailsDrawer({ project, onClose, onEdit, onDelet
               </button>
             </>
           ) : (
-            <button
-              onClick={onClose}
-              className="flex-1 py-3 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-xl transition-colors cursor-pointer text-center"
-            >
-              Close
-            </button>
+            <>
+              {appliedStatus === "pending" ? (
+                <button
+                  disabled
+                  className="flex-1 py-3 bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed text-center"
+                >
+                  Application Pending
+                </button>
+              ) : appliedStatus === "accepted" ? (
+                <button
+                  disabled
+                  className="flex-1 py-3 bg-green-50 text-green-600 border border-green-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed text-center"
+                >
+                  Joined Team
+                </button>
+              ) : (
+                <button
+                  onClick={() => {
+                    if (onApply) onApply(project._id || project.id);
+                  }}
+                  className="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md shadow-blue-500/10 transition-all cursor-pointer text-center"
+                >
+                  Apply to Join Project
+                </button>
+              )}
+              <button
+                onClick={onClose}
+                className="px-4 py-3 border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </>
           )}
         </div>
       </div>

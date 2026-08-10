@@ -6,7 +6,8 @@ import MyConnections from "./MyConnections";
 import Profile from "./Profile";
 
 
-import { getAllProjects, createProject, updateProject, deleteProject } from "../api/projectApi";
+import { getAllProjects, createProject, updateProject, deleteProject, applyToProject, getMyProjectApplications, getReceivedProjectApplications } from "../api/projectApi";
+import { getPendingRequests } from "../api/connectionApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
 
@@ -87,6 +88,16 @@ export default function Dashboard({ onNavigate }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
+  // Welcome toast — shows briefly on first dashboard load
+  const [showWelcomeToast, setShowWelcomeToast] = useState(true);
+  const [toastFading, setToastFading] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => setToastFading(true), 2800);  // start fade at 2.8s
+    const hideTimer = setTimeout(() => setShowWelcomeToast(false), 3500); // remove at 3.5s
+    return () => { clearTimeout(fadeTimer); clearTimeout(hideTimer); };
+  }, []);
+
   const fetchProjects = async () => {
     try {
       setLoading(true);
@@ -107,9 +118,92 @@ export default function Dashboard({ onNavigate }) {
     }
   };
 
+  const [appliedProjects, setAppliedProjects] = useState({}); // { [projectId]: status }
+  const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
+  const [applyingProjectId, setApplyingProjectId] = useState(null);
+
+  // Apply modal state
+  const [applyModalProject, setApplyModalProject] = useState(null); // project object or {id, title}
+  const [applyMessage, setApplyMessage] = useState("");
+
+  // Build a dynamic pre-filled note from logged-in user profile
+  const buildDefaultNote = () => {
+    try {
+      const u = JSON.parse(localStorage.getItem("user") || "{}");
+      const branch = u.branch || userProfile.major || "Software Engineering";
+      const skills = (Array.isArray(u.skills) && u.skills.length > 0)
+        ? u.skills.slice(0, 4).join(", ")
+        : (userProfile.skills || []).slice(0, 4).join(", ") || "Software Development";
+      return `Hello. I am writing to express my interest in joining your project team. My technical focus is in ${branch} with skills in ${skills}.`;
+    } catch {
+      return "Hello. I am writing to express my interest in joining your project team and would appreciate the opportunity to collaborate.";
+    }
+  };
+
+  const openApplyModal = (project) => {
+    setApplyModalProject(project);
+    setApplyMessage(buildDefaultNote());
+  };
+
+  const closeApplyModal = () => {
+    setApplyModalProject(null);
+    setApplyMessage("");
+  };
+
+  const fetchApplicationsAndRequests = async () => {
+    try {
+      const [sentAppsRes, receivedAppsRes, connRequestsRes] = await Promise.allSettled([
+        getMyProjectApplications(),
+        getReceivedProjectApplications(),
+        getPendingRequests()
+      ]);
+
+      if (sentAppsRes.status === "fulfilled" && sentAppsRes.value?.success) {
+        const map = {};
+        (sentAppsRes.value.applications || []).forEach((app) => {
+          const pId = app.project?._id || app.project;
+          if (pId) map[pId] = app.status;
+        });
+        setAppliedProjects(map);
+      }
+
+      let connCount = 0;
+      if (connRequestsRes.status === "fulfilled" && connRequestsRes.value?.success) {
+        connCount = (connRequestsRes.value.requests || []).length;
+      }
+
+      let appCount = 0;
+      if (receivedAppsRes.status === "fulfilled" && receivedAppsRes.value?.success) {
+        appCount = (receivedAppsRes.value.applications || []).length;
+      }
+
+      setPendingRequestsCount(connCount + appCount);
+    } catch (err) {
+      console.error("Error loading applications and requests:", err);
+    }
+  };
+
   useEffect(() => {
     fetchProjects();
+    fetchApplicationsAndRequests();
   }, []);
+
+  const handleApplyToProject = async (projectId, message) => {
+    try {
+      setApplyingProjectId(projectId);
+      const response = await applyToProject(projectId, message);
+      if (response.success) {
+        setAppliedProjects((prev) => ({ ...prev, [projectId]: "pending" }));
+        closeApplyModal();
+        alert("Application submitted successfully to the project lead!");
+      }
+    } catch (error) {
+      const msg = error.response?.data?.message || "Failed to apply to project";
+      alert(msg);
+    } finally {
+      setApplyingProjectId(null);
+    }
+  };
 
 
   // Mock Available Teams/Students for "Find Team"
@@ -218,8 +312,8 @@ export default function Dashboard({ onNavigate }) {
   const activeCount = userProjects.filter((p) => p.status === "In Progress" || p.status === "Planning" || p.status === "Open" || !p.status).length;
   const completedCount = userProjects.filter((p) => p.status === "Completed").length;
 
-  // TODO: Update pendingRequests count once the Join Request module is implemented
-  const pendingRequests = 0;
+  // Total pending requests combines connection requests and project applications
+  const pendingRequests = pendingRequestsCount;
 
   const totalTeamMembers = userProjects.reduce((sum, p) => sum + (Number(p.teamSize) || 0), 0);
   const averageProgress = userProjects.length > 0 
@@ -461,10 +555,35 @@ export default function Dashboard({ onNavigate }) {
                   Online Workspace
                 </span>
                 <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight">
-                  Welcome back, {userProfile.name.split(" ")[0]}! 🚀
+                  Your Workspace 🚀
                 </h1>
                 <p className="mt-2 text-white/80 text-sm md:text-base font-normal leading-relaxed">
-                  You are currently leading <span className="font-bold text-white">1 project</span> and participating in <span className="font-bold text-white">2 collaborations</span>. There are 2 pending applications from classmates looking to team up with you.
+                  {userProjects.length === 0
+                    ? "You haven't created any projects yet. Start one and find your dream team!"
+                    : <>
+                        You are currently leading{" "}
+                        <span className="font-bold text-white">
+                          {userProjects.length} {userProjects.length === 1 ? "project" : "projects"}
+                        </span>{" "}
+                        with{" "}
+                        <span className="font-bold text-white">
+                          {activeCount} active
+                        </span>{" "}
+                        and{" "}
+                        <span className="font-bold text-white">
+                          {completedCount} completed
+                        </span>.{" "}
+                        {pendingRequests > 0 && (
+                          <>
+                            There {pendingRequests === 1 ? "is" : "are"}{" "}
+                            <span className="font-bold text-white">
+                              {pendingRequests} pending {pendingRequests === 1 ? "request" : "requests"}
+                            </span>{" "}
+                            from classmates looking to team up with you.
+                          </>
+                        )}
+                      </>
+                  }
                 </p>
                 <div className="mt-6 flex flex-wrap gap-3">
                   <button
@@ -527,11 +646,17 @@ export default function Dashboard({ onNavigate }) {
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Projects</p>
                   <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{activeCount}</h3>
-                  <div className="flex items-center gap-1 text-[10px] font-semibold text-green-600 mt-1">
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                    </svg>
-                    <span>+1 this month</span>
+                  <div className="flex items-center gap-1 text-[10px] font-semibold mt-1" style={{ color: completedCount > 0 ? '#16a34a' : '#94a3b8' }}>
+                    {completedCount > 0 ? (
+                      <>
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                        </svg>
+                        <span>{completedCount} completed</span>
+                      </>
+                    ) : (
+                      <span>No completed projects yet</span>
+                    )}
                   </div>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600 shadow-inner">
@@ -547,11 +672,30 @@ export default function Dashboard({ onNavigate }) {
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Team Members</p>
                   <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{totalTeamMembers}</h3>
                   <div className="flex items-center -space-x-1.5 mt-2">
-                    <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&q=80&w=50" alt="" />
-                    <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&q=80&w=50" alt="" />
-                    <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&q=80&w=50" alt="" />
-                    <img className="w-5 h-5 rounded-full ring-2 ring-white object-cover" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&q=80&w=50" alt="" />
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 ring-2 ring-white text-[8px] font-bold text-slate-500">+4</span>
+                    {totalTeamMembers === 0 ? (
+                      <span className="text-[10px] font-semibold text-slate-400">No team slots yet</span>
+                    ) : (
+                      <>
+                        {userProjects.slice(0, 4).map((p, i) => {
+                          const colors = ['bg-blue-500','bg-indigo-500','bg-violet-500','bg-pink-500'];
+                          const initial = (p.title || '?')[0].toUpperCase();
+                          return (
+                            <span
+                              key={i}
+                              title={p.title}
+                              className={`flex items-center justify-center w-5 h-5 rounded-full ring-2 ring-white text-[8px] font-bold text-white ${colors[i % colors.length]}`}
+                            >
+                              {initial}
+                            </span>
+                          );
+                        })}
+                        {userProjects.length > 4 && (
+                          <span className="flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 ring-2 ring-white text-[8px] font-bold text-slate-500">
+                            +{userProjects.length - 4}
+                          </span>
+                        )}
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600 shadow-inner">
@@ -724,12 +868,11 @@ export default function Dashboard({ onNavigate }) {
                             onClick={() => setViewingProject(project)}
                             className="flex-1 text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl transition-colors cursor-pointer"
                           >
-                            View Work
+                            View Details
                           </button>
-                          {project.isOwner && (
+                          {project.isOwner ? (
                             <button
                               onClick={() => {
-                                // Simple edit status modal trigger or status toggle mock
                                 const updatedProjects = projects.map((p) => {
                                   const idMatch = (p.id && p.id === project.id) || (p._id && p._id === project._id);
                                   if (idMatch) {
@@ -742,10 +885,67 @@ export default function Dashboard({ onNavigate }) {
                                 setProjects(updatedProjects);
                               }}
                               className="px-3 py-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                              title="Mock Status Toggle"
+                              title="Toggle Status"
                             >
                               Update Status
                             </button>
+                          ) : (
+                            (() => {
+                              const pId = project._id || project.id;
+                              const appStatus = appliedProjects[pId];
+                              const isApplying = applyingProjectId === pId;
+
+                              if (appStatus === "pending") {
+                                return (
+                                  <button
+                                    disabled
+                                    className="px-3 py-2 bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed flex items-center gap-1"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                    </svg>
+                                    Applied
+                                  </button>
+                                );
+                              } else if (appStatus === "accepted") {
+                                return (
+                                  <button
+                                    disabled
+                                    className="px-3 py-2 bg-green-50 text-green-600 border border-green-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed flex items-center gap-1"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4.5 12.75l6 6 9-13.5" />
+                                    </svg>
+                                    Joined
+                                  </button>
+                                );
+                              } else {
+                                return (
+                                  <button
+                                    disabled={isApplying}
+                                    onClick={() => openApplyModal(project)}
+                                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                                  >
+                                    {isApplying ? (
+                                      <>
+                                        <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        Applying...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4.5v15m7.5-7.5h-15" />
+                                        </svg>
+                                        Apply to Join
+                                      </>
+                                    )}
+                                  </button>
+                                );
+                              }
+                            })()
                           )}
                         </div>
                       </div>
@@ -1001,6 +1201,12 @@ export default function Dashboard({ onNavigate }) {
       {viewingProject && (
         <ProjectDetailsDrawer
           project={viewingProject}
+          appliedStatus={appliedProjects[viewingProject._id || viewingProject.id]}
+          onApply={(projectId) => {
+            // Route through the modal for the drawer too
+            const proj = projects.find(p => (p._id || p.id) === projectId) || viewingProject;
+            openApplyModal(proj);
+          }}
           onClose={() => setViewingProject(null)}
           onEdit={(proj) => {
             setViewingProject(null);
@@ -1014,6 +1220,136 @@ export default function Dashboard({ onNavigate }) {
         />
       )}
       
+      {/* ============================================== */}
+      {/* APPLY TO JOIN PITCH MODAL */}
+      {/* ============================================== */}
+      {applyModalProject && (
+        <div
+          style={{
+            position: 'fixed', inset: 0, zIndex: 10000,
+            background: 'rgba(15,23,42,0.55)', backdropFilter: 'blur(4px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem'
+          }}
+          onClick={(e) => { if (e.target === e.currentTarget) closeApplyModal(); }}
+        >
+          <div style={{
+            background: '#fff', borderRadius: '1.25rem', width: '100%', maxWidth: '440px',
+            boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', padding: '1.75rem',
+            animation: 'slideUpModal 0.22s ease'
+          }}>
+            {/* Header */}
+            <div className="flex items-start justify-between mb-4">
+              <div>
+                <p className="text-xs font-semibold text-blue-600 uppercase tracking-widest mb-0.5">Apply to Join</p>
+                <h2 className="text-lg font-extrabold text-slate-800 leading-tight">
+                  {applyModalProject.title || applyModalProject.name || 'Project'}
+                </h2>
+              </div>
+              <button
+                onClick={closeApplyModal}
+                className="text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+                title="Close"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Message label */}
+            <label className="block text-xs font-semibold text-slate-600 mb-1.5">
+              Your Application Note
+              <span className="ml-1 font-normal text-slate-400">(editable)</span>
+            </label>
+            <textarea
+              value={applyMessage}
+              onChange={(e) => setApplyMessage(e.target.value)}
+              rows={5}
+              className="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm text-slate-700 leading-relaxed resize-none focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent transition"
+              placeholder="Write your application note here..."
+            />
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              This note will be sent to the project lead along with your profile.
+            </p>
+
+            {/* Buttons */}
+            <div className="flex gap-2 mt-5">
+              <button
+                onClick={closeApplyModal}
+                className="flex-1 py-2.5 px-4 rounded-xl border border-slate-200 text-slate-600 font-semibold text-sm hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                disabled={applyingProjectId === (applyModalProject._id || applyModalProject.id) || !applyMessage.trim()}
+                onClick={() => handleApplyToProject(applyModalProject._id || applyModalProject.id, applyMessage.trim())}
+                className="flex-1 py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm transition shadow-md shadow-blue-200 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+              >
+                {applyingProjectId === (applyModalProject._id || applyModalProject.id) ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                    </svg>
+                    Submitting...
+                  </>
+                ) : (
+                  'Submit Application'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================== */}
+      {showWelcomeToast && (
+        <div
+          style={{
+            position: 'fixed',
+            top: '1.25rem',
+            right: '1.25rem',
+            zIndex: 9999,
+            transition: 'opacity 0.6s ease, transform 0.6s ease',
+            opacity: toastFading ? 0 : 1,
+            transform: toastFading ? 'translateY(-8px)' : 'translateY(0)',
+          }}
+        >
+          <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-300/40 px-5 py-4 min-w-[260px]">
+            {/* Avatar */}
+            <img
+              src={userProfile.avatarUrl}
+              alt={userProfile.name}
+              className="w-10 h-10 rounded-full object-cover border-2 border-blue-100 shrink-0"
+            />
+            {/* Text */}
+            <div>
+              <p className="text-xs font-semibold text-slate-400 leading-none mb-0.5">Welcome back 👋</p>
+              <p className="text-sm font-extrabold text-slate-800 leading-snug">
+                {userProfile.name.split(" ")[0]}!
+              </p>
+              <p className="text-[10px] text-slate-400 font-medium mt-0.5">Good to see you again</p>
+            </div>
+            {/* Animated progress bar */}
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500"
+                style={{
+                  animation: 'shrink 3.5s linear forwards',
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes shrink {
+          from { width: 100%; }
+          to   { width: 0%; }
+        }
+      `}</style>
+
     </div>
   );
 }

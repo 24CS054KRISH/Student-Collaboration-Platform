@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Project = require('../models/Project');
+const ProjectApplication = require('../models/ProjectApplication');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // POST /create
@@ -106,6 +107,8 @@ router.delete('/delete/:id', authMiddleware, async (req, res) => {
         }
 
         await Project.findByIdAndDelete(id);
+        // Clean up applications for deleted project
+        await ProjectApplication.deleteMany({ project: id });
 
         return res.status(200).json({
             success: true,
@@ -198,4 +201,171 @@ const updateProject = async (req, res) => {
 
 router.put('/update/:id', authMiddleware, updateProject);
 
+// ─── Project Join Application Endpoints ─────────────────────────────────────
+
+// POST /api/projects/apply/:projectId — Apply to join a project
+router.post('/apply/:projectId', authMiddleware, async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const { message } = req.body;
+        const applicantId = req.user;
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({
+                success: false,
+                message: "Project not found"
+            });
+        }
+
+        // Prevent applying to own project
+        if (project.createdBy.toString() === applicantId.toString()) {
+            return res.status(400).json({
+                success: false,
+                message: "You cannot apply to your own project"
+            });
+        }
+
+        // Check for existing application
+        const existingApp = await ProjectApplication.findOne({
+            project: projectId,
+            applicant: applicantId
+        });
+
+        if (existingApp) {
+            return res.status(400).json({
+                success: false,
+                message: `You have already applied to this project (Status: ${existingApp.status})`
+            });
+        }
+
+        let finalMessage = message && message.trim() ? message.trim() : null;
+
+        if (!finalMessage) {
+            const User = require('../models/User');
+            const userDoc = await User.findById(applicantId);
+            if (userDoc) {
+                const branchStr = userDoc.branch || "Software Engineering";
+                const skillsStr = (userDoc.skills && userDoc.skills.length > 0)
+                    ? userDoc.skills.slice(0, 4).join(", ")
+                    : "Software Development";
+                finalMessage = `Hello. I am writing to express my interest in joining your project team. My technical focus is in ${branchStr} with skills in ${skillsStr}.`;
+            } else {
+                finalMessage = "Hello. I am writing to express my interest in joining your project team and would appreciate the opportunity to collaborate.";
+            }
+        }
+
+        const newApplication = new ProjectApplication({
+            project: projectId,
+            applicant: applicantId,
+            owner: project.createdBy,
+            message: finalMessage
+        });
+
+        await newApplication.save();
+
+        return res.status(201).json({
+            success: true,
+            message: "Application submitted successfully!",
+            application: newApplication
+        });
+    } catch (error) {
+        console.error("Error applying to project:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while applying to project"
+        });
+    }
+});
+
+// GET /api/projects/applications/received — Incoming applications for projects owned by logged-in user
+router.get('/applications/received', authMiddleware, async (req, res) => {
+    try {
+        const applications = await ProjectApplication.find({
+            owner: req.user,
+            status: 'pending'
+        })
+            .populate('applicant', '-password')
+            .populate('project', 'title category techStack requiredSkills status')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            applications
+        });
+    } catch (error) {
+        console.error("Error fetching received project applications:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while fetching project applications"
+        });
+    }
+});
+
+// GET /api/projects/applications/my-applications — Applications sent by logged-in user
+router.get('/applications/my-applications', authMiddleware, async (req, res) => {
+    try {
+        const applications = await ProjectApplication.find({ applicant: req.user })
+            .select('project status createdAt')
+            .sort({ createdAt: -1 });
+
+        return res.status(200).json({
+            success: true,
+            applications
+        });
+    } catch (error) {
+        console.error("Error fetching sent project applications:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while fetching sent applications"
+        });
+    }
+});
+
+// PUT /api/projects/applications/respond/:applicationId — Accept or reject project join application
+router.put('/applications/respond/:applicationId', authMiddleware, async (req, res) => {
+    try {
+        const { applicationId } = req.params;
+        const { action } = req.body; // 'accept' or 'reject'
+
+        if (!action || !['accept', 'reject'].includes(action.toLowerCase())) {
+            return res.status(400).json({
+                success: false,
+                message: "Valid action ('accept' or 'reject') is required"
+            });
+        }
+
+        const application = await ProjectApplication.findById(applicationId);
+        if (!application) {
+            return res.status(404).json({
+                success: false,
+                message: "Project application not found"
+            });
+        }
+
+        if (application.owner.toString() !== req.user.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized to respond to this application"
+            });
+        }
+
+        application.status = action.toLowerCase() === 'accept' ? 'accepted' : 'rejected';
+        await application.save();
+
+        return res.status(200).json({
+            success: true,
+            message: `Project application ${application.status} successfully`,
+            application
+        });
+    } catch (error) {
+        console.error("Error responding to project application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while responding to project application"
+        });
+    }
+});
+
 module.exports = router;
+

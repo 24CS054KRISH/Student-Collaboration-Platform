@@ -67,4 +67,43 @@ export const deleteProject = async (id) => {
     }
 };
 
+// ─── Project Join Application API Calls ──────────────────────────────────────
+
+export const applyToProject = async (projectId, message = '') => {
+    try {
+        const response = await API.post(`/projects/apply/${projectId}`, { message });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const getReceivedProjectApplications = async () => {
+    try {
+        const response = await API.get('/projects/applications/received');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const getMyProjectApplications = async () => {
+    try {
+        const response = await API.get('/projects/applications/my-applications');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const respondProjectApplication = async (applicationId, action) => {
+    try {
+        const response = await API.put(`/projects/applications/respond/${applicationId}`, { action });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
 export default API;
+
