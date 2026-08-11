@@ -1,11 +1,13 @@
 import { useState, useEffect } from "react";
 import { getAcceptedConnections, removeConnection } from "../api/connectionApi";
+import { useToast } from "./Toast";
 
 export default function MyConnections() {
   const [connections, setConnections] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const showToast = useToast();
 
   useEffect(() => {
     const fetchConnections = async () => {
@@ -26,19 +28,16 @@ export default function MyConnections() {
     fetchConnections();
   }, []);
 
-  const handleRemove = async (peerId, peerName) => {
-    if (!window.confirm(`Are you sure you want to remove ${peerName} from your connections?`)) {
-      return;
-    }
-
+  const handleRemove = async (peerId) => {
     try {
       await removeConnection(peerId);
       // Immediately remove connection from state without requiring a page refresh
       setConnections((prev) => prev.filter((c) => (c._id || c.id) !== peerId));
+      showToast("Connection removed", "success");
     } catch (err) {
       console.error("Failed to remove connection:", err);
       const msg = err.response?.data?.message || "Failed to remove connection";
-      alert(msg);
+      showToast(msg, "error");
     }
   };
 
@@ -172,7 +171,7 @@ export default function MyConnections() {
                 <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2.5 text-xs font-bold">
                   <button
                     type="button"
-                    onClick={() => alert(`Message ${name} (UI Only)`)}
+                    onClick={() => showToast(`Message ${name} (UI Only)`, "info")}
                     className="flex-1 py-2.5 px-3 text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/10 transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">

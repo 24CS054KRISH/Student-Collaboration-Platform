@@ -1,51 +1,71 @@
 import { useState, useEffect } from "react";
 import { getPendingRequests, respondConnectionRequest } from "../api/connectionApi";
 import { getReceivedProjectApplications, respondProjectApplication } from "../api/projectApi";
+import { useToast } from "./Toast";
 
-export default function PendingRequests() {
+export default function PendingRequests({
+  connectionRequests: propsConnectionRequests,
+  projectApplications: propsProjectApplications,
+  onRespondConnection,
+  onRespondProjectApp,
+  loading: propsLoading
+}) {
   const [activeSubTab, setActiveSubTab] = useState("connections"); // 'connections' | 'projectApplications'
-  const [connectionRequests, setConnectionRequests] = useState([]);
-  const [projectApplications, setProjectApplications] = useState([]);
-  const [loading, setLoading] = useState(true);
+
+  const isPropsMode = propsConnectionRequests !== undefined && propsProjectApplications !== undefined;
+
+  const [internalConnectionRequests, setInternalConnectionRequests] = useState([]);
+  const [internalProjectApplications, setInternalProjectApplications] = useState([]);
+  const [internalLoading, setInternalLoading] = useState(true);
   const [processingId, setProcessingId] = useState(null);
   const [error, setError] = useState("");
+  const showToast = useToast();
+
+  const connectionRequests = isPropsMode ? propsConnectionRequests : internalConnectionRequests;
+  const projectApplications = isPropsMode ? propsProjectApplications : internalProjectApplications;
+  const loading = isPropsMode ? propsLoading : internalLoading;
 
   const fetchData = async () => {
+    if (isPropsMode) return;
     try {
-      setLoading(true);
+      setInternalLoading(true);
       const [connRes, projRes] = await Promise.allSettled([
         getPendingRequests(),
         getReceivedProjectApplications()
       ]);
 
       if (connRes.status === "fulfilled" && connRes.value?.success) {
-        setConnectionRequests(connRes.value.requests || []);
+        setInternalConnectionRequests(connRes.value.requests || []);
       }
 
       if (projRes.status === "fulfilled" && projRes.value?.success) {
-        setProjectApplications(projRes.value.applications || []);
+        setInternalProjectApplications(projRes.value.applications || []);
       }
     } catch (err) {
       console.error("Failed to load pending requests:", err);
       setError("Failed to load pending requests");
     } finally {
-      setLoading(false);
+      setInternalLoading(false);
     }
   };
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [isPropsMode]);
 
   const handleRespondConnection = async (requestId, action) => {
     try {
       setProcessingId(requestId);
-      await respondConnectionRequest(requestId, action);
-      setConnectionRequests((prev) => prev.filter((r) => r._id !== requestId));
+      if (isPropsMode && onRespondConnection) {
+        await onRespondConnection(requestId, action);
+      } else {
+        await respondConnectionRequest(requestId, action);
+        setInternalConnectionRequests((prev) => prev.filter((r) => r._id !== requestId));
+      }
     } catch (err) {
       console.error(`Failed to ${action} connection request:`, err);
       const msg = err.response?.data?.message || `Failed to ${action} request`;
-      alert(msg);
+      showToast(msg, "error");
     } finally {
       setProcessingId(null);
     }
@@ -54,12 +74,16 @@ export default function PendingRequests() {
   const handleRespondProjectApp = async (applicationId, action) => {
     try {
       setProcessingId(applicationId);
-      await respondProjectApplication(applicationId, action);
-      setProjectApplications((prev) => prev.filter((app) => app._id !== applicationId));
+      if (isPropsMode && onRespondProjectApp) {
+        await onRespondProjectApp(applicationId, action);
+      } else {
+        await respondProjectApplication(applicationId, action);
+        setInternalProjectApplications((prev) => prev.filter((app) => app._id !== applicationId));
+      }
     } catch (err) {
       console.error(`Failed to ${action} project application:`, err);
       const msg = err.response?.data?.message || `Failed to ${action} application`;
-      alert(msg);
+      showToast(msg, "error");
     } finally {
       setProcessingId(null);
     }

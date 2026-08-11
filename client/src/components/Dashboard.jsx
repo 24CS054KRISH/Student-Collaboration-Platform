@@ -4,10 +4,10 @@ import FindTeam from "./FindTeam";
 import PendingRequests from "./PendingRequests";
 import MyConnections from "./MyConnections";
 import Profile from "./Profile";
+import { useToast } from "./Toast";
 
-
-import { getAllProjects, createProject, updateProject, deleteProject, applyToProject, getMyProjectApplications, getReceivedProjectApplications } from "../api/projectApi";
-import { getPendingRequests } from "../api/connectionApi";
+import { getAllProjects, createProject, updateProject, deleteProject, applyToProject, getMyProjectApplications, getReceivedProjectApplications, respondProjectApplication } from "../api/projectApi";
+import { getPendingRequests, respondConnectionRequest } from "../api/connectionApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
 
@@ -115,6 +115,7 @@ export default function Dashboard({ onNavigate }) {
   // Welcome toast — shows briefly on first dashboard load
   const [showWelcomeToast, setShowWelcomeToast] = useState(true);
   const [toastFading, setToastFading] = useState(false);
+  const showToast = useToast();
 
   useEffect(() => {
     const fadeTimer = setTimeout(() => setToastFading(true), 2800);  // start fade at 2.8s
@@ -146,6 +147,223 @@ export default function Dashboard({ onNavigate }) {
   const [pendingRequestsCount, setPendingRequestsCount] = useState(0);
   const [applyingProjectId, setApplyingProjectId] = useState(null);
 
+  // Notifications states
+  const [incomingConnections, setIncomingConnections] = useState([]);
+  const [incomingProjectApps, setIncomingProjectApps] = useState([]);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [processingNotificationId, setProcessingNotificationId] = useState(null);
+
+  const handleRespondConnection = async (requestId, action) => {
+    try {
+      setProcessingNotificationId(requestId);
+      await respondConnectionRequest(requestId, action);
+      setIncomingConnections((prev) => prev.filter((r) => r._id !== requestId));
+      setPendingRequestsCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error(`Failed to ${action} connection request:`, err);
+      const msg = err.response?.data?.message || `Failed to ${action} request`;
+      showToast(msg, "error");
+    } finally {
+      setProcessingNotificationId(null);
+    }
+  };
+
+  const handleRespondProjectApp = async (applicationId, action) => {
+    try {
+      setProcessingNotificationId(applicationId);
+      await respondProjectApplication(applicationId, action);
+      setIncomingProjectApps((prev) => prev.filter((app) => app._id !== applicationId));
+      setPendingRequestsCount((prev) => Math.max(0, prev - 1));
+      if (action === "accept") {
+        fetchProjects();
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} project application:`, err);
+      const msg = err.response?.data?.message || `Failed to ${action} application`;
+      showToast(msg, "error");
+    } finally {
+      setProcessingNotificationId(null);
+    }
+  };
+
+  const renderNotificationBellAndDropdown = (isMobile) => {
+    const totalCount = pendingRequestsCount;
+    return (
+      <div className="relative">
+        <button
+          type="button"
+          onClick={() => setShowNotifications(!showNotifications)}
+          className="relative p-2 rounded-xl text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-all cursor-pointer focus:outline-none"
+          title="Notifications"
+        >
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+          </svg>
+          {totalCount > 0 && (
+            <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-extrabold text-white ring-2 ring-white animate-bounce">
+              {totalCount}
+            </span>
+          )}
+        </button>
+
+        {showNotifications && (
+          <>
+            <div
+              className="fixed inset-0 z-40"
+              onClick={() => setShowNotifications(false)}
+            />
+            
+            <div
+              className={`absolute z-50 mt-2 w-80 md:w-96 rounded-2xl bg-white border border-slate-200/80 shadow-2xl shadow-slate-300/40 p-4 transition-all duration-200 ${
+                isMobile ? "right-[-50px] origin-top-right" : "right-0 origin-top-right"
+              }`}
+              style={{ animation: 'slideUpModal 0.18s ease' }}
+            >
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-800">Notifications</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">You have {totalCount} pending requests</p>
+                </div>
+                {totalCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleTabChange("Pending Requests");
+                      setShowNotifications(false);
+                    }}
+                    className="text-[10px] font-bold text-blue-600 hover:text-blue-700 transition cursor-pointer"
+                  >
+                    View All
+                  </button>
+                )}
+              </div>
+
+              <div className="max-h-[300px] overflow-y-auto space-y-3 pr-1 scrollbar-thin">
+                {totalCount === 0 ? (
+                  <div className="py-8 text-center flex flex-col items-center justify-center">
+                    <div className="h-10 w-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500 mb-2.5">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                    </div>
+                    <p className="text-xs font-bold text-slate-700">All caught up!</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">No new requests or applications</p>
+                  </div>
+                ) : (
+                  <>
+                    {incomingConnections.map((reqItem) => {
+                      const sender = reqItem.sender || {};
+                      const name = sender.fullName || sender.name || "Student";
+                      const avatar = sender.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+                      const branchYear = [
+                        sender.branch || sender.department,
+                        sender.year ? `${sender.year} Year` : null
+                      ].filter(Boolean).join(" • ") || "Student";
+                      const isProcessing = processingNotificationId === reqItem._id;
+
+                      return (
+                        <div
+                          key={reqItem._id}
+                          className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl transition border border-transparent hover:border-slate-100"
+                        >
+                          <img
+                            src={avatar}
+                            alt={name}
+                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-100"
+                          />
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-xs font-bold text-slate-800 leading-snug">
+                              {name} <span className="font-normal text-slate-400 text-[11px]">wants to connect</span>
+                            </p>
+                            <p className="text-[10px] text-blue-600 font-semibold truncate mt-0.5">{branchYear}</p>
+                            
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleRespondConnection(reqItem._id, "accept")}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer"
+                              >
+                                {isProcessing ? "..." : "Accept"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleRespondConnection(reqItem._id, "reject")}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg transition disabled:opacity-50 cursor-pointer"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    {incomingProjectApps.map((appItem) => {
+                      const applicant = appItem.applicant || {};
+                      const project = appItem.project || {};
+                      const name = applicant.fullName || applicant.name || "Student";
+                      const avatar = applicant.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+                      const projTitle = project.title || "Project";
+                      const isProcessing = processingNotificationId === appItem._id;
+
+                      return (
+                        <div
+                          key={appItem._id}
+                          className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl transition border border-transparent hover:border-slate-100"
+                        >
+                          <img
+                            src={avatar}
+                            alt={name}
+                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-100"
+                          />
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-xs font-bold text-slate-800 leading-snug">
+                              {name} <span className="font-normal text-slate-400 text-[11px]">applied to join</span>
+                            </p>
+                            <p className="text-[10px] text-amber-700 bg-amber-50 border border-amber-100/50 px-1.5 py-0.5 rounded-md font-semibold truncate mt-0.5 inline-block max-w-full">
+                              {projTitle}
+                            </p>
+                            {appItem.message && (
+                              <p className="text-[10px] text-slate-500 italic mt-1.5 pl-2 border-l-2 border-slate-200 line-clamp-2">
+                                "{appItem.message}"
+                              </p>
+                            )}
+                            
+                            <div className="flex gap-2 mt-2.5">
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleRespondProjectApp(appItem._id, "accept")}
+                                className="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white font-bold text-[10px] rounded-lg shadow-sm transition disabled:opacity-50 cursor-pointer"
+                              >
+                                {isProcessing ? "..." : "Accept"}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isProcessing}
+                                onClick={() => handleRespondProjectApp(appItem._id, "reject")}
+                                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-[10px] rounded-lg transition disabled:opacity-50 cursor-pointer"
+                              >
+                                Decline
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    );
+  };
+
   // Apply modal state
   const [applyModalProject, setApplyModalProject] = useState(null); // project object or {id, title}
   const [applyMessage, setApplyMessage] = useState("");
@@ -176,6 +394,7 @@ export default function Dashboard({ onNavigate }) {
 
   const fetchApplicationsAndRequests = async () => {
     try {
+      setLoadingNotifications(true);
       const [sentAppsRes, receivedAppsRes, connRequestsRes] = await Promise.allSettled([
         getMyProjectApplications(),
         getReceivedProjectApplications(),
@@ -191,19 +410,23 @@ export default function Dashboard({ onNavigate }) {
         setAppliedProjects(map);
       }
 
-      let connCount = 0;
+      let conns = [];
       if (connRequestsRes.status === "fulfilled" && connRequestsRes.value?.success) {
-        connCount = (connRequestsRes.value.requests || []).length;
+        conns = connRequestsRes.value.requests || [];
+        setIncomingConnections(conns);
       }
 
-      let appCount = 0;
+      let apps = [];
       if (receivedAppsRes.status === "fulfilled" && receivedAppsRes.value?.success) {
-        appCount = (receivedAppsRes.value.applications || []).length;
+        apps = receivedAppsRes.value.applications || [];
+        setIncomingProjectApps(apps);
       }
 
-      setPendingRequestsCount(connCount + appCount);
+      setPendingRequestsCount(conns.length + apps.length);
     } catch (err) {
       console.error("Error loading applications and requests:", err);
+    } finally {
+      setLoadingNotifications(false);
     }
   };
 
@@ -219,11 +442,11 @@ export default function Dashboard({ onNavigate }) {
       if (response.success) {
         setAppliedProjects((prev) => ({ ...prev, [projectId]: "pending" }));
         closeApplyModal();
-        alert("Application submitted successfully to the project lead!");
+        showToast("Application submitted successfully to the project lead!", "success");
       }
     } catch (error) {
       const msg = error.response?.data?.message || "Failed to apply to project";
-      alert(msg);
+      showToast(msg, "error");
     } finally {
       setApplyingProjectId(null);
     }
@@ -350,7 +573,7 @@ export default function Dashboard({ onNavigate }) {
     
     // Validate required fields
     if (!newProject.title || !newProject.description || !newProject.tags) {
-      alert("Please fill in all required fields.");
+      showToast("Please fill in all required fields.", "error");
       return;
     }
 
@@ -370,7 +593,7 @@ export default function Dashboard({ onNavigate }) {
         teamSize: 2
       });
 
-      alert("Project Created Successfully");
+      showToast("Project Created Successfully", "success");
       setShowCreateModal(false);
       
       // Reset new project form state
@@ -387,7 +610,7 @@ export default function Dashboard({ onNavigate }) {
       await fetchProjects();
     } catch (error) {
       const errorMessage = error.response?.data?.message || error.message || "Failed to create project";
-      alert(errorMessage);
+      showToast(errorMessage, "error");
     } finally {
       setSubmitting(false);
     }
@@ -409,33 +632,30 @@ export default function Dashboard({ onNavigate }) {
           };
           setViewingProject(updated);
         }
-        alert("Project updated successfully");
+        showToast("Project updated successfully", "success");
       } else {
-        alert(response.message || "Failed to update project");
+        showToast(response.message || "Failed to update project", "error");
       }
     } catch (error) {
       console.error("Error updating project:", error);
-      alert(error.response?.data?.message || "Error updating project. Please try again.");
+      showToast(error.response?.data?.message || "Error updating project. Please try again.", "error");
     }
   };
 
   const handleDelete = async (projectId) => {
-    if (!window.confirm("Are you sure you want to delete this project?")) {
-      return false;
-    }
     try {
       const response = await deleteProject(projectId);
       if (response.success) {
         await fetchProjects();
-        alert("Project deleted successfully");
+        showToast("Project deleted successfully", "success");
         return true;
       } else {
-        alert(response.message || "Failed to delete project");
+        showToast(response.message || "Failed to delete project", "error");
         return false;
       }
     } catch (error) {
       console.error("Error deleting project:", error);
-      alert(error.response?.data?.message || "Error deleting project. Please try again.");
+      showToast(error.response?.data?.message || "Error deleting project. Please try again.", "error");
       return false;
     }
   };
@@ -458,20 +678,23 @@ export default function Dashboard({ onNavigate }) {
             CollabGrad
           </span>
         </div>
-        <button
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none cursor-pointer"
-        >
-          {sidebarOpen ? (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          )}
-        </button>
+        <div className="flex items-center gap-2">
+          {renderNotificationBellAndDropdown(true)}
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none cursor-pointer"
+          >
+            {sidebarOpen ? (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            )}
+          </button>
+        </div>
       </header>
 
       {/* SIDEBAR NAVIGATION */}
@@ -560,6 +783,23 @@ export default function Dashboard({ onNavigate }) {
 
       {/* MAIN VIEW CONTENT CONTAINER */}
       <main className="flex-1 overflow-y-auto px-4 py-6 md:p-8 lg:p-10 max-w-7xl mx-auto w-full">
+        
+        {/* DESKTOP HEADER / TOPBAR */}
+        <div className="hidden md:flex items-center justify-between mb-8 pb-4 border-b border-slate-200/60 relative">
+          <div>
+            <h1 className="text-xl font-extrabold text-slate-800">
+              {activeTab === "Dashboard" ? `Welcome back, ${userProfile.name.split(" ")[0]}! 👋` : activeTab}
+            </h1>
+            <p className="text-xs text-slate-400 font-semibold">
+              {activeTab === "Dashboard" 
+                ? "Here's what's happening on your collaboration platform today."
+                : `Manage and view your ${activeTab.toLowerCase()} space.`}
+            </p>
+          </div>
+          <div className="flex items-center gap-4 relative">
+             {renderNotificationBellAndDropdown(false)}
+          </div>
+        </div>
         
         {/* ============================================== */}
         {/* TAB CONTENT: DASHBOARD OVERVIEW */}
@@ -735,10 +975,6 @@ export default function Dashboard({ onNavigate }) {
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Requests</p>
                   <h3 className="text-3xl font-extrabold text-slate-800 mt-2">{pendingRequests}</h3>
-                  <div className="flex items-center gap-1 text-[10px] font-semibold text-amber-600 mt-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping mr-0.5" />
-                    <span>Requires attention</span>
-                  </div>
                 </div>
                 <div className="h-12 w-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shadow-inner">
                   <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1004,7 +1240,13 @@ export default function Dashboard({ onNavigate }) {
         {/* TAB CONTENT: PENDING REQUESTS */}
         {/* ============================================== */}
         {activeTab === "Pending Requests" && (
-          <PendingRequests />
+          <PendingRequests
+            connectionRequests={incomingConnections}
+            projectApplications={incomingProjectApps}
+            onRespondConnection={handleRespondConnection}
+            onRespondProjectApp={handleRespondProjectApp}
+            loading={loadingNotifications}
+          />
         )}
 
         {/* ============================================== */}
@@ -1093,7 +1335,7 @@ export default function Dashboard({ onNavigate }) {
                   Cancel
                 </button>
                 <button
-                  onClick={() => alert("Settings saved (Simulated)!")}
+                  onClick={() => showToast("Settings saved (Simulated)!", "success")}
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-sm transition-colors cursor-pointer"
                 >
                   Save Changes
@@ -1371,6 +1613,10 @@ export default function Dashboard({ onNavigate }) {
         @keyframes shrink {
           from { width: 100%; }
           to   { width: 0%; }
+        }
+        @keyframes slideUpModal {
+          from { opacity: 0; transform: translateY(8px) scale(0.97); }
+          to   { opacity: 1; transform: translateY(0) scale(1); }
         }
       `}</style>
 

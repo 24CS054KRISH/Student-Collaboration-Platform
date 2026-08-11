@@ -1,10 +1,12 @@
 import { useState } from "react";
 import { updateProfile } from "../api/authApi";
+import { useToast } from "./Toast";
 
 export default function Profile({ userProfile, setUserProfile, projects }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [newSkillInput, setNewSkillInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const showToast = useToast();
   
   // Edit Form state
   const [editForm, setEditForm] = useState({
@@ -92,12 +94,12 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
           interests: interestsArray
         }));
 
-        alert("Profile updated successfully");
+        showToast("Profile updated successfully", "success");
         setShowEditModal(false);
       }
     } catch (error) {
       console.error("Error updating profile:", error);
-      alert(error.response?.data?.message || "Failed to update profile");
+      showToast(error.response?.data?.message || "Failed to update profile", "error");
     } finally {
       setSaving(false);
     }
@@ -121,7 +123,7 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
         }
       } catch (error) {
         console.error("Error updating skills:", error);
-        alert(error.response?.data?.message || "Failed to add skill");
+        showToast(error.response?.data?.message || "Failed to add skill", "error");
       }
     }
   };
@@ -140,7 +142,7 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
       }
     } catch (error) {
       console.error("Error removing skill:", error);
-      alert(error.response?.data?.message || "Failed to remove skill");
+      showToast(error.response?.data?.message || "Failed to remove skill", "error");
     }
   };
 

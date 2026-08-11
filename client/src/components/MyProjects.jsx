@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { getMyProjects, updateProject, deleteProject } from "../api/projectApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
+import { useToast } from "./Toast";
 
 export default function MyProjects({ projects, setProjects, onCreateClick }) {
   const [searchQuery, setSearchQuery] = useState("");
@@ -13,6 +14,7 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
 
   const [myProjects, setMyProjects] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showToast = useToast();
 
   const user = JSON.parse(localStorage.getItem("user") || "{}");
 
@@ -80,42 +82,32 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
         if (viewingProject && (viewingProject._id === updated._id || viewingProject.id === updated.id)) {
           setViewingProject(updated);
         }
-        alert("Project updated successfully");
+        showToast("Project updated successfully", "success");
       } else {
-        alert(response.message || "Failed to update project");
+        showToast(response.message || "Failed to update project", "error");
       }
     } catch (error) {
       console.error("Error updating project:", error);
-      alert(error.response?.data?.message || "Error updating project. Please try again.");
+      showToast(error.response?.data?.message || "Error updating project. Please try again.", "error");
     }
   };
 
   const handleDelete = async (projectId) => {
-    if (!window.confirm("Are you sure you want to delete this project?")) {
-      return false;
-    }
-
     try {
       const response = await deleteProject(projectId);
-
       if (response.success) {
-        // Remove from local myProjects state
-        setMyProjects(myProjects.filter((p) => p._id !== projectId && p.id !== projectId));
-
-        // Remove from global projects state if it exists
+        setMyProjects((prev) => prev.filter((p) => p._id !== projectId && p.id !== projectId));
         if (setProjects && projects) {
-          setProjects(projects.filter((p) => p._id !== projectId && p.id !== projectId));
+          setProjects((prev) => prev.filter((p) => p._id !== projectId && p.id !== projectId));
         }
-
-        alert("Project deleted successfully");
+        showToast("Project deleted successfully", "success");
         return true;
-      } else {
-        alert(response.message || "Failed to delete project");
-        return false;
       }
+      showToast("Failed to delete project", "error");
+      return false;
     } catch (error) {
       console.error("Error deleting project:", error);
-      alert(error.response?.data?.message || "Error deleting project. Please try again.");
+      showToast(error.response?.data?.message || "Error deleting project. Please try again.", "error");
       return false;
     }
   };

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getAllUsers } from "../api/authApi";
+import { useToast } from "./Toast";
 import {
   sendConnectionRequest,
   getSentRequests,
@@ -17,6 +18,7 @@ export default function FindTeam() {
 
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
+  const showToast = useToast();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -145,7 +147,7 @@ export default function FindTeam() {
     } catch (error) {
       console.error("Error sending connection request:", error);
       const message = error.response?.data?.message || "Failed to send connection request";
-      alert(message);
+      showToast(message, "error");
 
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Connect" } : s))
@@ -154,11 +156,7 @@ export default function FindTeam() {
   };
 
   // Handle Cancel Request Click
-  const handleCancelClick = async (studentId, studentName) => {
-    if (!window.confirm(`Are you sure you want to cancel your connection request to ${studentName}?`)) {
-      return;
-    }
-
+  const handleCancelClick = async (studentId) => {
     try {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Pending" } : s))
@@ -170,10 +168,11 @@ export default function FindTeam() {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Connect" } : s))
       );
+      showToast("Connection request cancelled", "success");
     } catch (error) {
       console.error("Error cancelling connection request:", error);
       const message = error.response?.data?.message || "Failed to cancel connection request";
-      alert(message);
+      showToast(message, "error");
 
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Requested" } : s))
@@ -182,11 +181,7 @@ export default function FindTeam() {
   };
 
   // Handle Remove Connection Click
-  const handleRemoveConnection = async (studentId, studentName) => {
-    if (!window.confirm(`Are you sure you want to remove your connection with ${studentName}?`)) {
-      return;
-    }
-
+  const handleRemoveConnection = async (studentId) => {
     try {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Pending" } : s))
@@ -198,10 +193,11 @@ export default function FindTeam() {
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Connect" } : s))
       );
+      showToast("Connection removed", "success");
     } catch (error) {
       console.error("Error removing connection:", error);
       const message = error.response?.data?.message || "Failed to remove connection";
-      alert(message);
+      showToast(message, "error");
 
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Connected" } : s))
@@ -230,7 +226,7 @@ export default function FindTeam() {
     } catch (error) {
       console.error(`Error responding to request (${action}):`, error);
       const message = error.response?.data?.message || `Failed to ${action} request`;
-      alert(message);
+      showToast(message, "error");
 
       setStudents((prev) =>
         prev.map((s) => (s.id === studentId ? { ...s, connectionState: "Respond to Request" } : s))
@@ -558,7 +554,8 @@ export default function FindTeam() {
                       rel="noreferrer"
                       onClick={(e) => {
                         e.preventDefault();
-                        alert(`Opening GitHub profile link: ${student.githubUrl}/${student.name.replace(" ", "").toLowerCase()}`);
+                        const githubUrl = `${student.githubUrl}/${student.name.replace(" ", "").toLowerCase()}`;
+                        window.open(githubUrl, "_blank", "noopener,noreferrer");
                       }}
                       className="px-3.5 py-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 hover:border-slate-300 text-slate-600 rounded-xl transition-all cursor-pointer flex items-center justify-center"
                       title="View GitHub"

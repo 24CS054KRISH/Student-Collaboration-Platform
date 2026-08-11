@@ -1,43 +1,40 @@
 import { useState } from "react";
 import { loginUser } from "../api/authApi";
+import { useToast } from "./Toast";
 
 export default function Login({ onNavigate }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const showToast = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     
-    // Validate email and password
-    if (!email || !password) {
-      alert("Email and password are required.");
-      return;
-    }
-
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      alert("Please enter a valid email address.");
-      return;
-    }
-
     try {
+      // Validate email and password
+      if (!email || !password) {
+        showToast("Email and password are required.", "error");
+        return;
+      }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email)) {
+        showToast("Please enter a valid email address.", "error");
+        return;
+      }
+
       const response = await loginUser({ email, password });
-      
-      // Save JWT token in localStorage using key: token
       localStorage.setItem("token", response.token);
-      
-      // Save logged-in user in localStorage using key: user
       localStorage.setItem("user", JSON.stringify(response.user));
-      
-      // Show alert: "Login Successful"
-      alert("Login Successful");
-      
+
+      showToast("Login successful", "success");
+
       // Navigate to Dashboard
       if (onNavigate) onNavigate("dashboard");
     } catch (error) {
       // Show the backend error message
       const errorMessage = error.response?.data?.message || error.message || "Login failed";
-      alert(errorMessage);
+      showToast(errorMessage, "error");
     }
   };
 

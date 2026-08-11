@@ -1,7 +1,10 @@
 import { useState } from "react";
 import { registerUser } from "../api/authApi";
+import { useToast } from "./Toast";
 
 export default function Register({ onNavigate }) {
+  const showToast = useToast();
+
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
@@ -25,13 +28,13 @@ export default function Register({ onNavigate }) {
 
     // Validate that all required fields are filled
     if (!fullName || !email || !department || !year || !skills || !interests || !password || !confirmPassword) {
-      alert("All fields are required.");
+      showToast("All fields are required.", "error");
       return;
     }
 
     // Validate password === confirmPassword
     if (password !== confirmPassword) {
-      alert("Passwords do not match.");
+      showToast("Passwords do not match.", "error");
       return;
     }
 
@@ -52,14 +55,14 @@ export default function Register({ onNavigate }) {
       // Save response.user into localStorage as "user"
       localStorage.setItem("user", JSON.stringify(response.user));
 
-      alert("Registration Successful");
+      showToast("Registration successful", "success");
 
       // Navigate to Dashboard
       if (onNavigate) onNavigate("dashboard");
     } catch (error) {
       // If backend returns an error: Show alert(error.response.data.message)
       const errorMessage = error.response?.data?.message || error.message || "Registration failed";
-      alert(errorMessage);
+      showToast(errorMessage, "error");
     }
   };
 
