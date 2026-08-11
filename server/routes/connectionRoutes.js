@@ -431,6 +431,77 @@ router.get('/accepted', authMiddleware, async (req, res) => {
     }
 });
 
+const Project = require('../models/Project');
+
+/**
+ * GET /api/connections/recommendations/:projectId
+ * Recommends connected peers for a project based on skill match
+ */
+router.get('/recommendations/:projectId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { projectId } = req.params;
+
+        const project = await Project.findById(projectId);
+        if (!project) {
+            return res.status(404).json({ success: false, message: "Project not found" });
+        }
+
+        const projectSkills = [
+            ...(project.requiredSkills || []),
+            ...(project.techStack || [])
+        ].map(s => s.toLowerCase().trim()).filter(Boolean);
+
+        // Fetch accepted connections for current user
+        const acceptedRequests = await ConnectionRequest.find({
+            status: 'accepted',
+            $or: [{ sender: userId }, { receiver: userId }]
+        })
+        .populate('sender', '-password')
+        .populate('receiver', '-password');
+
+        const peersMap = new Map();
+        acceptedRequests.forEach(reqDoc => {
+            if (!reqDoc.sender || !reqDoc.receiver) return;
+            const isSender = reqDoc.sender._id.toString() === userId.toString();
+            const peer = isSender ? reqDoc.receiver : reqDoc.sender;
+            if (peer && peer._id && !peersMap.has(peer._id.toString())) {
+                peersMap.set(peer._id.toString(), peer);
+            }
+        });
+
+        const recommendations = Array.from(peersMap.values()).map(peer => {
+            const peerObj = peer.toObject ? peer.toObject() : peer;
+            const userSkills = (peerObj.skills || []).map(s => s.toLowerCase().trim());
+            
+            const matchingSkills = projectSkills.filter(ps => 
+                userSkills.some(us => us.includes(ps) || ps.includes(us))
+            );
+
+            const matchScore = projectSkills.length > 0
+                ? Math.min(100, Math.round((matchingSkills.length / Math.max(1, projectSkills.length)) * 100))
+                : (userSkills.length > 0 ? 50 : 0);
+
+            return {
+                ...peerObj,
+                matchScore,
+                matchingSkills: [...new Set(matchingSkills)]
+            };
+        }).sort((a, b) => b.matchScore - a.matchScore);
+
+        return res.status(200).json({
+            success: true,
+            recommendations
+        });
+    } catch (error) {
+        console.error("Error fetching teammate recommendations:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error fetching recommendations"
+        });
+    }
+});
+
 module.exports = router;
 
 

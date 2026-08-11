@@ -22,9 +22,9 @@ API.interceptors.request.use(
     }
 );
 
-export const getAllProjects = async () => {
+export const getAllProjects = async (params = {}) => {
     try {
-        const response = await API.get('/projects/all');
+        const response = await API.get('/projects/all', { params });
         return response.data;
     } catch (error) {
         throw error;
@@ -99,6 +99,15 @@ export const getMyProjectApplications = async () => {
 export const respondProjectApplication = async (applicationId, action) => {
     try {
         const response = await API.put(`/projects/applications/respond/${applicationId}`, { action });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+export const withdrawProjectApplication = async (projectId) => {
+    try {
+        const response = await API.delete(`/projects/applications/cancel/${projectId}`);
         return response.data;
     } catch (error) {
         throw error;

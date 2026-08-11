@@ -66,7 +66,9 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
         github: editForm.githubUrl,
         linkedin: editForm.linkedinUrl,
         portfolio: editForm.portfolioUrl,
-        skills: userProfile.skills
+        skills: userProfile.skills,
+        achievements: achievementsArray,
+        interests: interestsArray
       });
 
       if (response.success && response.user) {
@@ -90,8 +92,8 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
           linkedinUrl: u.linkedin !== undefined ? u.linkedin : editForm.linkedinUrl,
           portfolioUrl: u.portfolio !== undefined ? u.portfolio : editForm.portfolioUrl,
           skills: Array.isArray(u.skills) ? u.skills : prev.skills,
-          achievements: achievementsArray,
-          interests: interestsArray
+          achievements: Array.isArray(u.achievements) ? u.achievements : achievementsArray,
+          interests: Array.isArray(u.interests) ? u.interests : interestsArray
         }));
 
         showToast("Profile updated successfully", "success");
@@ -143,6 +145,26 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
     } catch (error) {
       console.error("Error removing skill:", error);
       showToast(error.response?.data?.message || "Failed to remove skill", "error");
+    }
+  };
+
+  // Remove Achievement
+  const handleRemoveAchievement = async (achievementToRemove) => {
+    const currentAchievements = userProfile.achievements || [];
+    const updated = currentAchievements.filter((a) => a !== achievementToRemove);
+    try {
+      const response = await updateProfile({ achievements: updated });
+      if (response.success && response.user) {
+        localStorage.setItem("user", JSON.stringify(response.user));
+        setUserProfile((prev) => ({
+          ...prev,
+          achievements: response.user.achievements || updated
+        }));
+        showToast("Achievement removed", "success");
+      }
+    } catch (error) {
+      console.error("Error removing achievement:", error);
+      showToast(error.response?.data?.message || "Failed to remove achievement", "error");
     }
   };
 
@@ -405,38 +427,83 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
             </ul>
           </div>
 
-          {/* Section 6: Current Projects */}
-          <div className="bg-white border border-slate-200/60 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
-            <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider border-b border-slate-100 pb-3">6. Current Projects</h3>
+          {/* Section 6: Projects (Lead & Joined) */}
+          <div className="bg-white border border-slate-200/60 rounded-2xl p-5 md:p-6 shadow-sm space-y-6">
             
-            <div className="divide-y divide-slate-100">
-              {projects.map((proj) => (
-                <div key={proj.id} className="py-4 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-xs md:text-sm font-extrabold text-slate-800">{proj.title}</h4>
-                      <span className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase tracking-wider ${
-                        proj.status === "Completed" ? "bg-green-50 text-green-600 border border-green-100" : "bg-amber-50 text-amber-600 border border-amber-100"
-                      }`}>
-                        {proj.status}
-                      </span>
-                    </div>
-                    <p className="text-xs text-slate-400 font-medium truncate max-w-sm">{proj.description}</p>
-                  </div>
+            {/* Subsection A: Created / Lead Projects */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">Created & Lead Projects</h3>
+                <span className="text-[10px] font-bold bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">
+                  {(projects || []).filter((p) => p.isOwner).length}
+                </span>
+              </div>
 
-                  {/* Progress bar summary */}
-                  <div className="flex items-center gap-3 shrink-0">
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold text-slate-400">Completion</span>
-                      <span className="block text-xs font-black text-slate-700">{proj.progress}%</span>
+              <div className="divide-y divide-slate-100">
+                {(projects || []).filter((p) => p.isOwner).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-2">No projects created yet.</p>
+                ) : (
+                  (projects || []).filter((p) => p.isOwner).map((proj) => (
+                    <div key={proj._id || proj.id} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs md:text-sm font-extrabold text-slate-800">{proj.title}</h4>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-700">
+                            Lead
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 font-medium truncate max-w-sm">{proj.description}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          proj.status === "Completed" ? "bg-green-50 text-green-600 border border-green-100" : "bg-amber-50 text-amber-600 border border-amber-100"
+                        }`}>
+                          {proj.status || "Active"}
+                        </span>
+                      </div>
                     </div>
-                    <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: `${proj.progress}%` }} />
-                    </div>
-                  </div>
-                </div>
-              ))}
+                  ))
+                )}
+              </div>
             </div>
+
+            {/* Subsection B: Joined Team Projects */}
+            <div className="space-y-3 pt-2">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">Joined Team Projects</h3>
+                <span className="text-[10px] font-bold bg-green-50 text-green-600 px-2 py-0.5 rounded-full">
+                  {(projects || []).filter((p) => !p.isOwner && p.members && p.members.some((m) => String(m._id) === String((JSON.parse(localStorage.getItem("user") || "{}"))._id))).length}
+                </span>
+              </div>
+
+              <div className="divide-y divide-slate-100">
+                {(projects || []).filter((p) => !p.isOwner && p.members && p.members.some((m) => String(m._id) === String((JSON.parse(localStorage.getItem("user") || "{}"))._id))).length === 0 ? (
+                  <p className="text-xs text-slate-400 italic py-2">No joined team projects yet.</p>
+                ) : (
+                  (projects || []).filter((p) => !p.isOwner && p.members && p.members.some((m) => String(m._id) === String((JSON.parse(localStorage.getItem("user") || "{}"))._id))).map((proj) => (
+                    <div key={proj._id || proj.id} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="space-y-0.5">
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-xs md:text-sm font-extrabold text-slate-800">{proj.title}</h4>
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-green-100 text-green-700">
+                            Member
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 font-medium truncate max-w-sm">{proj.description}</p>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-green-50 text-green-600 border border-green-100">
+                          {proj.status || "Active"}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
           </div>
 
         </div>

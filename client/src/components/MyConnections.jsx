@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { getAcceptedConnections, removeConnection } from "../api/connectionApi";
 import { useToast } from "./Toast";
 
-export default function MyConnections() {
+export default function MyConnections({ onNavigateToChat }) {
   const [connections, setConnections] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -171,7 +171,13 @@ export default function MyConnections() {
                 <div className="mt-6 pt-4 border-t border-slate-100 flex gap-2.5 text-xs font-bold">
                   <button
                     type="button"
-                    onClick={() => showToast(`Message ${name} (UI Only)`, "info")}
+                    onClick={() => {
+                      if (onNavigateToChat) {
+                        onNavigateToChat(conn);
+                      } else {
+                        showToast(`Messaging ${name}`, "info");
+                      }
+                    }}
                     className="flex-1 py-2.5 px-3 text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-md shadow-blue-500/10 transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">

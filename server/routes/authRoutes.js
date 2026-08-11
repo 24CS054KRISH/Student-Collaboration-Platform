@@ -153,7 +153,7 @@ router.get('/users', async (req, res) => {
 // PUT /profile - Update current user profile
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
-        const { fullName, college, branch, year, bio, github, linkedin, portfolio, skills } = req.body;
+        const { fullName, college, branch, year, bio, github, linkedin, portfolio, skills, achievements, interests } = req.body;
 
         const user = await User.findById(req.user);
         if (!user) {
@@ -175,6 +175,16 @@ router.put('/profile', authMiddleware, async (req, res) => {
             user.skills = Array.isArray(skills)
                 ? skills
                 : (typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : []);
+        }
+        if (achievements !== undefined) {
+            user.achievements = Array.isArray(achievements)
+                ? achievements
+                : (typeof achievements === 'string' ? achievements.split(',').map(s => s.trim()).filter(Boolean) : []);
+        }
+        if (interests !== undefined) {
+            user.interests = Array.isArray(interests)
+                ? interests
+                : (typeof interests === 'string' ? interests.split(',').map(s => s.trim()).filter(Boolean) : []);
         }
 
         await user.save();

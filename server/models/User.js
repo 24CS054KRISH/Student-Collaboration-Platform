@@ -49,6 +49,14 @@ const userSchema = new mongoose.Schema({
         type: String,
         trim: true
     },
+    achievements: {
+        type: [String],
+        default: []
+    },
+    interests: {
+        type: [String],
+        default: []
+    },
     createdAt: {
         type: Date,
         default: Date.now

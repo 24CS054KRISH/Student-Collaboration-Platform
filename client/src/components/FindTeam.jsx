@@ -9,7 +9,7 @@ import {
   respondConnectionRequest
 } from "../api/connectionApi";
 
-export default function FindTeam() {
+export default function FindTeam({ onSelectPeer }) {
   const [searchQuery, setSearchQuery] = useState("");
   const [skillFilter, setSkillFilter] = useState("All");
   const [roleFilter, setRoleFilter] = useState("All");
@@ -380,14 +380,20 @@ export default function FindTeam() {
             >
               <div>
                 {/* Header: Photo, Name, Role */}
-                <div className="flex items-start gap-4">
+                <div
+                  onClick={() => {
+                    if (onSelectPeer) onSelectPeer(student);
+                  }}
+                  className="flex items-start gap-4 cursor-pointer group"
+                  title="Click to view student profile"
+                >
                   <img
                     src={student.avatar}
                     alt={student.name}
-                    className="w-14 h-14 rounded-xl object-cover border border-slate-100 shadow-sm"
+                    className="w-14 h-14 rounded-xl object-cover border border-slate-100 shadow-sm group-hover:ring-2 ring-blue-500 transition"
                   />
                   <div className="space-y-0.5">
-                    <h3 className="text-base font-extrabold text-slate-900 leading-snug">{student.name}</h3>
+                    <h3 className="text-base font-extrabold text-slate-900 leading-snug group-hover:text-blue-600 transition">{student.name}</h3>
                     <p className="text-xs font-bold text-blue-600">{student.role}</p>
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold ${student.availabilityStatus === "Available"
                         ? "bg-green-50 text-green-600 border border-green-100"

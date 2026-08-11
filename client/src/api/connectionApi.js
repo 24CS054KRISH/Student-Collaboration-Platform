@@ -98,6 +98,15 @@ export const removeConnection = async (targetUserId) => {
     }
 };
 
+export const getTeammateRecommendations = async (projectId) => {
+    try {
+        const response = await API.get(`/connections/recommendations/${projectId}`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
 
 
 

@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const Project = require('../models/Project');
 const ProjectApplication = require('../models/ProjectApplication');
+const ActivityLog = require('../models/ActivityLog');
 const authMiddleware = require('../middleware/authMiddleware');
 
 // Helper to attach real team members from accepted applications
@@ -89,6 +90,21 @@ router.post('/create', authMiddleware, async (req, res) => {
         const populatedProject = await Project.findById(newProject._id).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio');
         const [createdProjectWithMembers] = await attachMembersToProjects([populatedProject]);
 
+        try {
+            const activity = new ActivityLog({
+                user: req.user,
+                type: 'project_created',
+                title: `launched a new project: "${title}"`,
+                description: description ? description.substring(0, 100) : "",
+                meta: { projectId: newProject._id }
+            });
+            await activity.save();
+            const populatedActivity = await ActivityLog.findById(activity._id).populate('user', 'fullName email avatar branch year college skills');
+            req.app.get('io')?.emit('new_activity_event', populatedActivity);
+        } catch (actErr) {
+            console.error("Error logging project_created activity:", actErr);
+        }
+
         return res.status(201).json({
             success: true,
             message: "Project created successfully",
@@ -103,10 +119,54 @@ router.post('/create', authMiddleware, async (req, res) => {
     }
 });
 
-// GET /all
+// GET /all - Fetch all projects with optional search & filtering queries (?search=...&category=...&status=...&skill=...)
 router.get('/all', async (req, res) => {
     try {
-        const rawProjects = await Project.find().populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio').sort({ createdAt: -1 });
+        const { search, category, status, skill } = req.query;
+        const filter = {};
+
+        if (search && search.trim()) {
+            const searchRegex = new RegExp(search.trim(), 'i');
+            filter.$or = [
+                { title: searchRegex },
+                { description: searchRegex },
+                { category: searchRegex }
+            ];
+        }
+
+        if (category && category !== 'All') {
+            filter.category = new RegExp(category.trim(), 'i');
+        }
+
+        if (status && status !== 'All') {
+            filter.status = status.trim();
+        }
+
+        if (skill && skill !== 'All') {
+            const skillRegex = new RegExp(skill.trim(), 'i');
+            if (filter.$or) {
+                filter.$and = [
+                    { $or: filter.$or },
+                    {
+                        $or: [
+                            { requiredSkills: skillRegex },
+                            { techStack: skillRegex }
+                        ]
+                    }
+                ];
+                delete filter.$or;
+            } else {
+                filter.$or = [
+                    { requiredSkills: skillRegex },
+                    { techStack: skillRegex }
+                ];
+            }
+        }
+
+        const rawProjects = await Project.find(filter)
+            .populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio')
+            .sort({ createdAt: -1 });
+
         const projects = await attachMembersToProjects(rawProjects);
         const totalProjects = projects.length;
 
@@ -119,7 +179,7 @@ router.get('/all', async (req, res) => {
         console.error("Error fetching projects:", error);
         return res.status(500).json({
             success: false,
-            message: "Server error while fetching projects"
+            message: "Server error fetching projects"
         });
     }
 });
@@ -382,6 +442,38 @@ router.get('/applications/my-applications', authMiddleware, async (req, res) => 
         return res.status(500).json({
             success: false,
             message: "Server error while fetching sent applications"
+        });
+    }
+});
+
+// DELETE /api/projects/applications/cancel/:projectId — Withdraw/cancel sent application
+router.delete('/applications/cancel/:projectId', authMiddleware, async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const userId = req.user;
+
+        const application = await ProjectApplication.findOneAndDelete({
+            project: projectId,
+            applicant: userId,
+            status: 'pending'
+        });
+
+        if (!application) {
+            return res.status(404).json({
+                success: false,
+                message: "Pending application not found or already processed"
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Project application withdrawn successfully"
+        });
+    } catch (error) {
+        console.error("Error withdrawing project application:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while withdrawing project application"
         });
     }
 });

@@ -1,15 +1,20 @@
 import { useState, useEffect } from "react";
+import { io } from "socket.io-client";
 import MyProjects from "./MyProjects";
 import FindTeam from "./FindTeam";
 import PendingRequests from "./PendingRequests";
 import MyConnections from "./MyConnections";
 import Profile from "./Profile";
+import Messages from "./Messages";
 import { useToast } from "./Toast";
 
-import { getAllProjects, createProject, updateProject, deleteProject, applyToProject, getMyProjectApplications, getReceivedProjectApplications, respondProjectApplication } from "../api/projectApi";
+import { getAllProjects, createProject, updateProject, deleteProject, applyToProject, getMyProjectApplications, getReceivedProjectApplications, respondProjectApplication, withdrawProjectApplication } from "../api/projectApi";
 import { getPendingRequests, respondConnectionRequest } from "../api/connectionApi";
+import { getConversations } from "../api/messageApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
+import PeerProfileModal from "./PeerProfileModal";
+import ActivityFeed from "./ActivityFeed";
 
 export default function Dashboard({ onNavigate }) {
   const [activeTab, setActiveTab] = useState(() => {
@@ -21,11 +26,48 @@ export default function Dashboard({ onNavigate }) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingProject, setEditingProject] = useState(null);
   const [viewingProject, setViewingProject] = useState(null);
+  const [selectedPeerForChat, setSelectedPeerForChat] = useState(null);
+  const [selectedPeerForModal, setSelectedPeerForModal] = useState(null);
   
+  const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
+  const [incomingMessages, setIncomingMessages] = useState([]);
+
   const handleTabChange = (tabName) => {
     setActiveTab(tabName);
     localStorage.setItem("activeTab", tabName);
+    if (tabName === "Messages") {
+      setUnreadMessagesCount(0);
+    }
   };
+
+  useEffect(() => {
+    const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
+    const userId = loggedInUser._id || loggedInUser.id;
+    if (!userId) return;
+
+    const socket = io("http://localhost:5000");
+
+    socket.on("connect", () => {
+      socket.emit("join_room", `user_${userId}`);
+    });
+
+    socket.on("new_message_notification", (msg) => {
+      const senderObj = typeof msg.sender === "object" ? msg.sender : {};
+      const senderName = senderObj.fullName || "Student";
+      const senderId = senderObj._id || msg.sender;
+
+      if (String(senderId) !== String(userId)) {
+        const preview = msg.content.length > 35 ? msg.content.slice(0, 35) + "..." : msg.content;
+        showToast(`💬 New message from ${senderName}: "${preview}"`, "info");
+        setUnreadMessagesCount((prev) => prev + 1);
+        setIncomingMessages((prev) => [msg, ...prev]);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");
@@ -66,8 +108,8 @@ export default function Dashboard({ onNavigate }) {
           githubUrl: u.github || "",
           linkedinUrl: u.linkedin || "",
           portfolioUrl: u.portfolio || "",
-          achievements: [],
-          interests: []
+          achievements: Array.isArray(u.achievements) ? u.achievements : [],
+          interests: Array.isArray(u.interests) ? u.interests : []
         };
       }
     } catch (e) {
@@ -114,10 +156,10 @@ export default function Dashboard({ onNavigate }) {
 
   const showToast = useToast();
 
-  const fetchProjects = async () => {
+  const fetchProjects = async (params = {}) => {
     try {
       setLoading(true);
-      const data = await getAllProjects();
+      const data = await getAllProjects(params);
       const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
       const mappedProjects = (data.projects || []).map((p) => {
         const ownerId = p.createdBy && typeof p.createdBy === "object" ? p.createdBy._id : p.createdBy;
@@ -179,7 +221,7 @@ export default function Dashboard({ onNavigate }) {
   };
 
   const renderNotificationBellAndDropdown = (isMobile) => {
-    const totalCount = pendingRequestsCount;
+    const totalCount = pendingRequestsCount + unreadMessagesCount;
     return (
       <div className="relative">
         <button
@@ -192,7 +234,7 @@ export default function Dashboard({ onNavigate }) {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
           </svg>
           {totalCount > 0 && (
-            <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-extrabold text-white ring-2 ring-white animate-bounce">
+            <span className="absolute top-1 right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-extrabold text-white ring-2 ring-white">
               {totalCount}
             </span>
           )}
@@ -214,13 +256,17 @@ export default function Dashboard({ onNavigate }) {
               <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
                 <div>
                   <h3 className="text-sm font-extrabold text-slate-800">Notifications</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">You have {totalCount} pending requests</p>
+                  <p className="text-[10px] text-slate-400 font-medium">You have {totalCount} new alerts</p>
                 </div>
                 {totalCount > 0 && (
                   <button
                     type="button"
                     onClick={() => {
-                      handleTabChange("Pending Requests");
+                      if (unreadMessagesCount > 0) {
+                        handleTabChange("Messages");
+                      } else {
+                        handleTabChange("Pending Requests");
+                      }
                       setShowNotifications(false);
                     }}
                     className="text-[10px] font-bold text-blue-600 hover:text-blue-700 transition cursor-pointer"
@@ -243,6 +289,49 @@ export default function Dashboard({ onNavigate }) {
                   </div>
                 ) : (
                   <>
+                    {incomingMessages.map((msgItem) => {
+                      const sender = typeof msgItem.sender === "object" ? msgItem.sender : {};
+                      const name = sender.fullName || "Student";
+                      const avatar = sender.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+
+                      return (
+                        <div
+                          key={msgItem._id || Math.random()}
+                          className="flex items-start gap-3 p-2.5 hover:bg-slate-50 rounded-xl transition border border-transparent hover:border-slate-100"
+                        >
+                          <img
+                            src={avatar}
+                            alt={name}
+                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-100"
+                          />
+                          <div className="flex-1 min-w-0 text-left">
+                            <p className="text-xs font-bold text-slate-800 leading-snug">
+                              {name} <span className="font-normal text-slate-400 text-[11px]">sent a message</span>
+                            </p>
+                            <p className="text-[11px] text-slate-600 italic truncate mt-0.5">
+                              "{msgItem.content}"
+                            </p>
+
+                            <div className="flex gap-2 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (msgItem.chatType === "direct" && sender._id) {
+                                    setSelectedPeerForChat(sender);
+                                  }
+                                  handleTabChange("Messages");
+                                  setShowNotifications(false);
+                                }}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] rounded-lg shadow-sm transition cursor-pointer"
+                              >
+                                Reply / Open Chat
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+
                     {incomingConnections.map((reqItem) => {
                       const sender = reqItem.sender || {};
                       const name = sender.fullName || sender.name || "Student";
@@ -386,10 +475,11 @@ export default function Dashboard({ onNavigate }) {
   const fetchApplicationsAndRequests = async () => {
     try {
       setLoadingNotifications(true);
-      const [sentAppsRes, receivedAppsRes, connRequestsRes] = await Promise.allSettled([
+      const [sentAppsRes, receivedAppsRes, connRequestsRes, convsRes] = await Promise.allSettled([
         getMyProjectApplications(),
         getReceivedProjectApplications(),
-        getPendingRequests()
+        getPendingRequests(),
+        getConversations()
       ]);
 
       if (sentAppsRes.status === "fulfilled" && sentAppsRes.value?.success) {
@@ -411,6 +501,14 @@ export default function Dashboard({ onNavigate }) {
       if (receivedAppsRes.status === "fulfilled" && receivedAppsRes.value?.success) {
         apps = receivedAppsRes.value.applications || [];
         setIncomingProjectApps(apps);
+      }
+
+      if (convsRes.status === "fulfilled" && convsRes.value?.success) {
+        const direct = convsRes.value.directChats || [];
+        const team = convsRes.value.teamChats || [];
+        const directUnread = direct.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+        const teamUnread = team.reduce((sum, c) => sum + (c.unreadCount || 0), 0);
+        setUnreadMessagesCount(directUnread + teamUnread);
       }
 
       setPendingRequestsCount(conns.length + apps.length);
@@ -440,6 +538,22 @@ export default function Dashboard({ onNavigate }) {
       showToast(msg, "error");
     } finally {
       setApplyingProjectId(null);
+    }
+  };
+
+  const handleWithdrawApplication = async (projectId) => {
+    try {
+      await withdrawProjectApplication(projectId);
+      setAppliedProjects((prev) => {
+        const next = { ...prev };
+        delete next[projectId];
+        return next;
+      });
+      showToast("Project application withdrawn", "success");
+    } catch (err) {
+      console.error("Failed to withdraw project application:", err);
+      const msg = err.response?.data?.message || "Failed to withdraw application";
+      showToast(msg, "error");
     }
   };
 
@@ -515,6 +629,11 @@ export default function Dashboard({ onNavigate }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
       </svg>
     )},
+    { name: "Messages", icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+      </svg>
+    )},
     { name: "Profile", icon: (
 
 
@@ -530,15 +649,20 @@ export default function Dashboard({ onNavigate }) {
     )},
   ];
 
+  // Debounced server-side search and skill filtering
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchProjects({
+        search: searchQuery,
+        skill: selectedTagFilter !== "All" ? selectedTagFilter : undefined
+      });
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, selectedTagFilter]);
+
   // Filtering projects list based on search and tags/skills
-  const filteredProjects = projects.filter((p) => {
-    const matchesSearch = (p.title || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          (p.description || "").toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesTag = selectedTagFilter === "All" || 
-                       (p.requiredSkills && p.requiredSkills.includes(selectedTagFilter)) ||
-                       (p.tags && p.tags.includes(selectedTagFilter));
-    return matchesSearch && matchesTag;
-  });
+  const filteredProjects = projects;
 
   const userProjects = projects.filter((p) => {
     const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
@@ -727,7 +851,12 @@ export default function Dashboard({ onNavigate }) {
                   <span className={`${isActive ? "text-blue-600" : "text-slate-400 group-hover:text-slate-600"}`}>
                     {item.icon}
                   </span>
-                  {item.name}
+                  <span className="flex-1 text-left">{item.name}</span>
+                  {item.name === "Messages" && unreadMessagesCount > 0 && (
+                    <span className="bg-red-500 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-full ring-2 ring-white">
+                      {unreadMessagesCount}
+                    </span>
+                  )}
                 </button>
               );
             })}
@@ -993,6 +1122,9 @@ export default function Dashboard({ onNavigate }) {
 
             </div>
 
+            {/* 3.5 Live Activity Stream */}
+            <ActivityFeed onSelectPeer={(peer) => setSelectedPeerForModal(peer)} />
+
             {/* 4. Recent Projects Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
@@ -1149,13 +1281,14 @@ export default function Dashboard({ onNavigate }) {
                               if (appStatus === "pending") {
                                 return (
                                   <button
-                                    disabled
-                                    className="px-3 py-2 bg-amber-50 text-amber-600 border border-amber-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed flex items-center gap-1"
+                                    onClick={() => handleWithdrawApplication(pId)}
+                                    className="px-3 py-2 bg-amber-50 hover:bg-red-50 text-amber-700 hover:text-red-600 border border-amber-200 hover:border-red-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 group"
+                                    title="Click to withdraw application"
                                   >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <svg className="w-3.5 h-3.5 text-amber-600 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
                                     </svg>
-                                    Applied
+                                    <span>Withdraw App</span>
                                   </button>
                                 );
                               } else if (appStatus === "accepted") {
@@ -1224,7 +1357,7 @@ export default function Dashboard({ onNavigate }) {
         {/* TAB CONTENT: FIND TEAM */}
         {/* ============================================== */}
         {activeTab === "Find Team" && (
-          <FindTeam />
+          <FindTeam onSelectPeer={(peer) => setSelectedPeerForModal(peer)} />
         )}
 
         {/* ============================================== */}
@@ -1244,7 +1377,22 @@ export default function Dashboard({ onNavigate }) {
         {/* TAB CONTENT: MY CONNECTIONS */}
         {/* ============================================== */}
         {activeTab === "My Connections" && (
-          <MyConnections />
+          <MyConnections
+            onNavigateToChat={(peer) => {
+              setSelectedPeerForChat(peer);
+              handleTabChange("Messages");
+            }}
+          />
+        )}
+
+        {/* ============================================== */}
+        {/* TAB CONTENT: MESSAGES */}
+        {/* ============================================== */}
+        {activeTab === "Messages" && (
+          <Messages
+            initialPeer={selectedPeerForChat}
+            onSelectPeer={(peer) => setSelectedPeerForModal(peer)}
+          />
         )}
 
         {/* ============================================== */}
@@ -1473,6 +1621,22 @@ export default function Dashboard({ onNavigate }) {
             if (await handleDelete(id)) {
               setViewingProject(null);
             }
+          }}
+          onSelectPeer={(peer) => setSelectedPeerForModal(peer)}
+        />
+      )}
+
+      {/* ============================================== */}
+      {/* UNIVERSAL PEER PROFILE MODAL */}
+      {/* ============================================== */}
+      {selectedPeerForModal && (
+        <PeerProfileModal
+          peer={selectedPeerForModal}
+          onClose={() => setSelectedPeerForModal(null)}
+          onNavigateToChat={(peer) => {
+            setSelectedPeerForModal(null);
+            setSelectedPeerForChat(peer);
+            setActiveTab("Messages");
           }}
         />
       )}

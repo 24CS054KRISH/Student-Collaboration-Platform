@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
+import { getTeammateRecommendations } from "../api/connectionApi";
 
-export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, onClose, onEdit, onDelete }) {
+export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, onClose, onEdit, onDelete, onSelectPeer }) {
   if (!project) return null;
 
   const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
@@ -9,6 +10,24 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
   const isOwner = project.isOwner || 
                   project.createdBy === loggedInUser._id || 
                   project.createdBy?._id === loggedInUser._id;
+
+  const [recommendations, setRecommendations] = useState([]);
+  const [loadingRecs, setLoadingRecs] = useState(false);
+
+  useEffect(() => {
+    const pId = project._id || project.id;
+    if (isOwner && pId) {
+      setLoadingRecs(true);
+      getTeammateRecommendations(pId)
+        .then((data) => {
+          if (data.success && Array.isArray(data.recommendations)) {
+            setRecommendations(data.recommendations);
+          }
+        })
+        .catch((err) => console.error("Error loading recommendations:", err))
+        .finally(() => setLoadingRecs(false));
+    }
+  }, [project, isOwner]);
 
   // Resolve creator details
   let creatorName = "Academic Peer";
@@ -39,11 +58,11 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
       ];
 
   return (
-    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-end">
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       {/* Backdrop Clicker */}
       <div className="absolute inset-0" onClick={onClose} />
 
-      <div className="relative bg-white h-full max-w-lg w-full shadow-2xl p-6 md:p-8 flex flex-col justify-between overflow-y-auto z-10 animate-slideLeft">
+      <div className="relative bg-white rounded-2xl max-w-2xl w-full max-h-[90vh] shadow-2xl p-6 md:p-8 flex flex-col justify-between overflow-y-auto z-10 animate-scaleIn">
         <div className="space-y-6">
           {/* Header */}
           <div className="flex items-start justify-between border-b border-slate-100 pb-4">
@@ -122,19 +141,91 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
                 const info = member.branch || member.college || member.email || "";
 
                 return (
-                  <div key={member._id || i} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
-                    <img src={avatar} alt={name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                  <div
+                    key={member._id || i}
+                    onClick={() => {
+                      if (onSelectPeer) onSelectPeer(member);
+                    }}
+                    className="flex items-center gap-3 p-2 hover:bg-slate-50 border border-transparent hover:border-slate-200 rounded-xl transition cursor-pointer group"
+                    title="Click to view profile"
+                  >
+                    <img src={avatar} alt={name} className="w-8 h-8 rounded-full object-cover shrink-0" />
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-bold text-slate-800 truncate">{name}</p>
+                      <p className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition truncate">{name}</p>
                       <p className="text-[10px] text-slate-400 font-semibold truncate">
                         {role} {info ? `• ${info}` : ""}
                       </p>
                     </div>
+                    <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition">View Profile →</span>
                   </div>
                 );
               })}
             </div>
           </div>
+
+          {/* Recommended Teammates (Only visible to Project Lead) */}
+          {isOwner && (
+            <div className="space-y-3 pt-3 border-t border-slate-100">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <span className="text-amber-500">⚡</span> Recommended Teammates ({recommendations.length})
+                </h4>
+                <span className="text-[10px] text-slate-400 font-medium">Smart Skill Match</span>
+              </div>
+
+              {loadingRecs ? (
+                <p className="text-xs text-slate-400 italic">Finding matching student connections...</p>
+              ) : recommendations.length === 0 ? (
+                <p className="text-xs text-slate-400 italic bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  No connected peers found matching this project's skills yet. Connect with students in Find Team to get recommendations!
+                </p>
+              ) : (
+                <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                  {recommendations.map((rec) => {
+                    const recName = rec.fullName || rec.name || "Student";
+                    const recAvatar = rec.avatar || rec.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(recName)}&background=0D8ABC&color=fff`;
+
+                    return (
+                      <div
+                        key={rec._id}
+                        className="flex items-center justify-between p-3 bg-blue-50/30 hover:bg-blue-50/60 border border-blue-100/60 rounded-xl transition gap-3"
+                      >
+                        <div
+                          onClick={() => {
+                            if (onSelectPeer) onSelectPeer(rec);
+                          }}
+                          className="flex items-center gap-3 min-w-0 flex-1 cursor-pointer"
+                        >
+                          <img src={recAvatar} alt={recName} className="w-8 h-8 rounded-full object-cover shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-bold text-slate-900 truncate">{recName}</p>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-amber-100 text-amber-700 shrink-0">
+                                {rec.matchScore}% Match
+                              </span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-medium truncate">
+                              Matches: {(rec.matchingSkills || rec.skills || []).slice(0, 3).join(", ") || "General Skills"}
+                            </p>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (onSelectPeer) onSelectPeer(rec);
+                          }}
+                          className="px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg transition cursor-pointer shrink-0 shadow-sm"
+                        >
+                          Invite / Profile
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Created By */}
           <div className="space-y-2">
@@ -149,38 +240,9 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
               </div>
             </div>
           </div>
-
-          {/* Mock Roadmap Milestones */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Milestones & Roadmap</h4>
-            <div className="space-y-2.5">
-              <div className="flex items-center gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-[10px] font-bold">✓</span>
-                <span className="text-xs text-slate-500 font-medium line-through">Define project structure and goals</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-green-100 flex items-center justify-center text-green-600 text-[10px] font-bold">✓</span>
-                <span className="text-xs text-slate-500 font-medium line-through">Develop primary web interface templates</span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold ${
-                  (project.progress || 0) >= 70 ? "bg-green-100 text-green-600" : "bg-blue-100 text-blue-600"
-                }`}>
-                  {(project.progress || 0) >= 70 ? "✓" : "2"}
-                </span>
-                <span className={`text-xs font-medium ${(project.progress || 0) >= 70 ? "text-slate-500 line-through" : "text-slate-700"}`}>
-                  Integrate dynamic task tracking boards
-                </span>
-              </div>
-              <div className="flex items-center gap-2.5">
-                <span className="w-4 h-4 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 text-[10px] font-bold">3</span>
-                <span className="text-xs text-slate-400 font-medium">Final review and deployment validation</span>
-              </div>
-            </div>
-          </div>
         </div>
 
-        {/* Drawer Actions */}
+        {/* Modal Actions */}
         <div className="pt-6 border-t border-slate-100 flex gap-3 mt-6">
           {isOwner ? (
             <>
