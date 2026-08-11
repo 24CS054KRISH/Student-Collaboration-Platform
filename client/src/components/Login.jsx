@@ -27,7 +27,7 @@ export default function Login({ onNavigate }) {
       localStorage.setItem("token", response.token);
       localStorage.setItem("user", JSON.stringify(response.user));
 
-      showToast("Login successful", "success");
+      showToast("Login Successful — Welcome back!", "success");
 
       // Navigate to Dashboard
       if (onNavigate) onNavigate("dashboard");

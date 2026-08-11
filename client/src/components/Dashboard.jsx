@@ -112,16 +112,7 @@ export default function Dashboard({ onNavigate }) {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
 
-  // Welcome toast — shows briefly on first dashboard load
-  const [showWelcomeToast, setShowWelcomeToast] = useState(true);
-  const [toastFading, setToastFading] = useState(false);
   const showToast = useToast();
-
-  useEffect(() => {
-    const fadeTimer = setTimeout(() => setToastFading(true), 2800);  // start fade at 2.8s
-    const hideTimer = setTimeout(() => setShowWelcomeToast(false), 3500); // remove at 3.5s
-    return () => { clearTimeout(fadeTimer); clearTimeout(hideTimer); };
-  }, []);
 
   const fetchProjects = async () => {
     try {
@@ -1568,46 +1559,7 @@ export default function Dashboard({ onNavigate }) {
         </div>
       )}
 
-      {/* ============================================== */}
-      {showWelcomeToast && (
-        <div
-          style={{
-            position: 'fixed',
-            top: '1.25rem',
-            right: '1.25rem',
-            zIndex: 9999,
-            transition: 'opacity 0.6s ease, transform 0.6s ease',
-            opacity: toastFading ? 0 : 1,
-            transform: toastFading ? 'translateY(-8px)' : 'translateY(0)',
-          }}
-        >
-          <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-2xl shadow-2xl shadow-slate-300/40 px-5 py-4 min-w-[260px]">
-            {/* Avatar */}
-            <img
-              src={userProfile.avatarUrl}
-              alt={userProfile.name}
-              className="w-10 h-10 rounded-full object-cover border-2 border-blue-100 shrink-0"
-            />
-            {/* Text */}
-            <div>
-              <p className="text-xs font-semibold text-slate-400 leading-none mb-0.5">Welcome back 👋</p>
-              <p className="text-sm font-extrabold text-slate-800 leading-snug">
-                {userProfile.name.split(" ")[0]}!
-              </p>
-              <p className="text-[10px] text-slate-400 font-medium mt-0.5">Good to see you again</p>
-            </div>
-            {/* Animated progress bar */}
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 rounded-b-2xl overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-500 to-indigo-500"
-                style={{
-                  animation: 'shrink 3.5s linear forwards',
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <style>{`
         @keyframes shrink {

@@ -24,6 +24,20 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
     }
   }
 
+  // Resolve real team members list
+  const teamMembers = Array.isArray(project.members) && project.members.length > 0
+    ? project.members
+    : [
+        {
+          _id: (typeof project.createdBy === "object" ? project.createdBy._id : project.createdBy) || "owner",
+          fullName: creatorName,
+          email: creatorEmail,
+          role: "Lead Developer",
+          isOwner: true,
+          avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(creatorName)}&background=0D8ABC&color=fff`
+        }
+      ];
+
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-end">
       {/* Backdrop Clicker */}
@@ -99,33 +113,26 @@ export default function ProjectDetailsDrawer({ project, appliedStatus, onApply, 
 
           {/* Team Members */}
           <div className="space-y-3">
-            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Team Members ({project.teamSize || 1})</h4>
+            <h4 className="text-xs font-extrabold text-slate-400 uppercase tracking-wider">Team Members ({teamMembers.length})</h4>
             <div className="space-y-2 max-h-36 overflow-y-auto">
-              {project.teamAvatars && project.teamAvatars.length > 0 ? (
-                project.teamAvatars.map((url, i) => (
-                  <div key={i} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
-                    <img src={url} alt="Member" className="w-7 h-7 rounded-full object-cover" />
-                    <div>
-                      <p className="text-xs font-bold text-slate-800">
-                        {i === 0 ? (isOwner ? "You (Lead)" : creatorName) : `Teammate #${i}`}
+              {teamMembers.map((member, i) => {
+                const name = member.fullName || member.name || creatorName;
+                const avatar = member.avatar || member.avatarUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+                const role = member.role || (member.isOwner ? "Lead Developer" : "Contributor");
+                const info = member.branch || member.college || member.email || "";
+
+                return (
+                  <div key={member._id || i} className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
+                    <img src={avatar} alt={name} className="w-7 h-7 rounded-full object-cover shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-bold text-slate-800 truncate">{name}</p>
+                      <p className="text-[10px] text-slate-400 font-semibold truncate">
+                        {role} {info ? `• ${info}` : ""}
                       </p>
-                      <p className="text-[10px] text-slate-400 font-semibold">{i === 0 ? "Lead Developer" : "Contributor"}</p>
                     </div>
                   </div>
-                ))
-              ) : (
-                <div className="flex items-center gap-3 p-2 hover:bg-slate-50 rounded-lg">
-                  <div className="w-7 h-7 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                    </svg>
-                  </div>
-                  <div>
-                    <p className="text-xs font-bold text-slate-800">{isOwner ? "You" : creatorName}</p>
-                    <p className="text-[10px] text-slate-400 font-semibold">Lead Developer</p>
-                  </div>
-                </div>
-              )}
+                );
+              })}
             </div>
           </div>
 

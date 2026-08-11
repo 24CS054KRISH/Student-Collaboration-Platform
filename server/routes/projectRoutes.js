@@ -4,6 +4,64 @@ const Project = require('../models/Project');
 const ProjectApplication = require('../models/ProjectApplication');
 const authMiddleware = require('../middleware/authMiddleware');
 
+// Helper to attach real team members from accepted applications
+const attachMembersToProjects = async (projects) => {
+    return await Promise.all(
+        projects.map(async (projectDoc) => {
+            const project = projectDoc.toObject ? projectDoc.toObject() : projectDoc;
+
+            const acceptedApps = await ProjectApplication.find({
+                project: project._id,
+                status: 'accepted'
+            }).populate('applicant', 'fullName email college branch year skills bio github linkedin portfolio avatar');
+
+            const members = [];
+
+            if (project.createdBy) {
+                const ownerObj = typeof project.createdBy === 'object' ? project.createdBy : {};
+                const ownerName = ownerObj.fullName || 'Project Lead';
+                members.push({
+                    _id: ownerObj._id || project.createdBy,
+                    fullName: ownerName,
+                    email: ownerObj.email || '',
+                    college: ownerObj.college || '',
+                    branch: ownerObj.branch || '',
+                    year: ownerObj.year || '',
+                    skills: ownerObj.skills || [],
+                    bio: ownerObj.bio || '',
+                    role: 'Lead Developer',
+                    isOwner: true,
+                    avatar: ownerObj.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=0D8ABC&color=fff`
+                });
+            }
+
+            acceptedApps.forEach((app) => {
+                if (app.applicant) {
+                    const appUser = app.applicant;
+                    const name = appUser.fullName || 'Team Member';
+                    members.push({
+                        _id: appUser._id,
+                        fullName: name,
+                        email: appUser.email || '',
+                        college: appUser.college || '',
+                        branch: appUser.branch || '',
+                        year: appUser.year || '',
+                        skills: appUser.skills || [],
+                        bio: appUser.bio || '',
+                        role: 'Contributor',
+                        isOwner: false,
+                        avatar: appUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`
+                    });
+                }
+            });
+
+            project.members = members;
+            project.teamAvatars = members.map((m) => m.avatar);
+            return project;
+        })
+    );
+};
+
 // POST /create
 router.post('/create', authMiddleware, async (req, res) => {
     try {
@@ -28,11 +86,13 @@ router.post('/create', authMiddleware, async (req, res) => {
         });
 
         await newProject.save();
+        const populatedProject = await Project.findById(newProject._id).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio');
+        const [createdProjectWithMembers] = await attachMembersToProjects([populatedProject]);
 
         return res.status(201).json({
             success: true,
             message: "Project created successfully",
-            project: newProject
+            project: createdProjectWithMembers
         });
     } catch (error) {
         console.error("Error creating project:", error);
@@ -46,7 +106,8 @@ router.post('/create', authMiddleware, async (req, res) => {
 // GET /all
 router.get('/all', async (req, res) => {
     try {
-        const projects = await Project.find().populate('createdBy', 'fullName email').sort({ createdAt: -1 });
+        const rawProjects = await Project.find().populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio').sort({ createdAt: -1 });
+        const projects = await attachMembersToProjects(rawProjects);
         const totalProjects = projects.length;
 
         return res.status(200).json({
@@ -68,7 +129,8 @@ router.get('/my/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
 
-        const projects = await Project.find({ createdBy: userId }).populate('createdBy', 'fullName email').sort({ createdAt: -1 });
+        const rawProjects = await Project.find({ createdBy: userId }).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio').sort({ createdAt: -1 });
+        const projects = await attachMembersToProjects(rawProjects);
         const totalProjects = projects.length;
 
         return res.status(200).json({
@@ -177,12 +239,14 @@ const updateProject = async (req, res) => {
         if (status !== undefined) project.status = status;
         if (progress !== undefined) project.progress = progress;
 
-        const updatedProject = await project.save();
+        const savedProject = await project.save();
+        const populatedProject = await Project.findById(savedProject._id).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio');
+        const [updatedProjectWithMembers] = await attachMembersToProjects([populatedProject]);
 
         return res.status(200).json({
             success: true,
             message: "Project updated successfully",
-            project: updatedProject
+            project: updatedProjectWithMembers
         });
     } catch (error) {
         console.error("Error updating project:", error);
