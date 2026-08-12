@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const ConnectionRequest = require('../models/ConnectionRequest');
+const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
+const { sendConnectionRequestEmail, sendConnectionAcceptedEmail } = require('../services/emailService');
 
 /**
  * Helper to fetch all connection statuses and states for a user in both directions.
@@ -131,6 +133,21 @@ router.post('/request', authMiddleware, async (req, res) => {
         });
 
         await newConnection.save();
+
+        try {
+            const sender = await User.findById(senderId);
+            const receiver = await User.findById(receiverId);
+            if (sender && receiver && receiver.email) {
+                sendConnectionRequestEmail({
+                    recipientEmail: receiver.email,
+                    recipientName: receiver.fullName,
+                    senderName: sender.fullName,
+                    senderEmail: sender.email
+                });
+            }
+        } catch (emailErr) {
+            console.error("🔒 Safe Email Log: Error dispatching connection request email:", emailErr.message);
+        }
 
         return res.status(201).json({
             success: true,
@@ -373,8 +390,26 @@ router.put('/respond/:requestId', authMiddleware, async (req, res) => {
             });
         }
 
-        request.status = action.toLowerCase() === 'accept' ? 'accepted' : 'rejected';
+        const isAccepted = action.toLowerCase() === 'accept';
+        request.status = isAccepted ? 'accepted' : 'rejected';
         await request.save();
+
+        if (isAccepted) {
+            try {
+                const populatedRequest = await ConnectionRequest.findById(request._id)
+                    .populate('sender')
+                    .populate('receiver');
+                if (populatedRequest && populatedRequest.sender && populatedRequest.sender.email) {
+                    sendConnectionAcceptedEmail({
+                        recipientEmail: populatedRequest.sender.email,
+                        recipientName: populatedRequest.sender.fullName,
+                        accepterName: populatedRequest.receiver?.fullName || "Academic Peer"
+                    });
+                }
+            } catch (emailErr) {
+                console.error("🔒 Safe Email Log: Error dispatching connection accepted email:", emailErr.message);
+            }
+        }
 
         return res.status(200).json({
             success: true,

@@ -4,6 +4,7 @@ const Project = require('../models/Project');
 const ProjectApplication = require('../models/ProjectApplication');
 const ActivityLog = require('../models/ActivityLog');
 const authMiddleware = require('../middleware/authMiddleware');
+const { sendProjectJoinEmail } = require('../services/emailService');
 
 // Helper to attach real team members from accepted applications
 const attachMembersToProjects = async (projects) => {
@@ -119,10 +120,10 @@ router.post('/create', authMiddleware, async (req, res) => {
     }
 });
 
-// GET /all - Fetch all projects with optional search & filtering queries (?search=...&category=...&status=...&skill=...)
+// GET /all - Fetch all projects with optional search & filtering queries (?search=...&category=...&status=...&skill=...&limit=...)
 router.get('/all', async (req, res) => {
     try {
-        const { search, category, status, skill } = req.query;
+        const { search, category, status, skill, limit } = req.query;
         const filter = {};
 
         if (search && search.trim()) {
@@ -163,12 +164,18 @@ router.get('/all', async (req, res) => {
             }
         }
 
-        const rawProjects = await Project.find(filter)
+        const totalProjects = await Project.countDocuments(filter);
+
+        let query = Project.find(filter)
             .populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio')
             .sort({ createdAt: -1 });
 
+        if (limit && !isNaN(parseInt(limit))) {
+            query = query.limit(parseInt(limit));
+        }
+
+        const rawProjects = await query;
         const projects = await attachMembersToProjects(rawProjects);
-        const totalProjects = projects.length;
 
         return res.status(200).json({
             success: true,
@@ -388,6 +395,23 @@ router.post('/apply/:projectId', authMiddleware, async (req, res) => {
 
         await newApplication.save();
 
+        try {
+            const User = require('../models/User');
+            const applicantUser = await User.findById(applicantId);
+            const ownerUser = await User.findById(project.createdBy);
+            if (applicantUser && ownerUser && ownerUser.email) {
+                sendProjectJoinEmail({
+                    recipientEmail: ownerUser.email,
+                    recipientName: ownerUser.fullName,
+                    projectTitle: project.title,
+                    joiningUserName: applicantUser.fullName,
+                    type: 'application'
+                });
+            }
+        } catch (emailErr) {
+            console.error("🔒 Safe Email Log: Error sending project application email:", emailErr.message);
+        }
+
         return res.status(201).json({
             success: true,
             message: "Application submitted successfully!",
@@ -506,8 +530,28 @@ router.put('/applications/respond/:applicationId', authMiddleware, async (req, r
             });
         }
 
-        application.status = action.toLowerCase() === 'accept' ? 'accepted' : 'rejected';
+        const isAccepted = action.toLowerCase() === 'accept';
+        application.status = isAccepted ? 'accepted' : 'rejected';
         await application.save();
+
+        if (isAccepted) {
+            try {
+                const User = require('../models/User');
+                const applicantUser = await User.findById(application.applicant);
+                const projectDoc = await Project.findById(application.project);
+                if (applicantUser && applicantUser.email && projectDoc) {
+                    sendProjectJoinEmail({
+                        recipientEmail: applicantUser.email,
+                        recipientName: applicantUser.fullName,
+                        projectTitle: projectDoc.title,
+                        joiningUserName: applicantUser.fullName,
+                        type: 'accepted'
+                    });
+                }
+            } catch (emailErr) {
+                console.error("🔒 Safe Email Log: Error sending project team join email:", emailErr.message);
+            }
+        }
 
         return res.status(200).json({
             success: true,

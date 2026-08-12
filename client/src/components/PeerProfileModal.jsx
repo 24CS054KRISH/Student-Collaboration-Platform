@@ -23,10 +23,21 @@ export default function PeerProfileModal({ peer, onClose, onNavigateToChat }) {
       <div className="relative bg-white rounded-2xl max-w-lg w-full max-h-[85vh] shadow-2xl overflow-hidden flex flex-col z-10 animate-scaleIn">
         
         {/* Banner Header */}
-        <div className="h-28 bg-gradient-to-r from-blue-600 to-indigo-600 relative shrink-0">
+        <div className="h-28 bg-gradient-to-r from-blue-600 to-indigo-600 relative shrink-0 flex items-center justify-between px-4">
+          <button
+            type="button"
+            onClick={onClose}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-black/20 hover:bg-black/40 rounded-xl backdrop-blur-sm transition cursor-pointer"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+            </svg>
+            <span>Back</span>
+          </button>
           <button
             onClick={onClose}
-            className="absolute top-3 right-3 text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition cursor-pointer"
+            className="text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition cursor-pointer"
+            title="Close"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />

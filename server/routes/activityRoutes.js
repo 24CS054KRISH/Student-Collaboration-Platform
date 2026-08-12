@@ -2,13 +2,16 @@ const express = require('express');
 const router = express.Router();
 const ActivityLog = require('../models/ActivityLog');
 
-// GET /api/activity/recent — Fetch recent 15 activity log items
+// GET /api/activity/recent — Fetch recent activity log items (optional ?limit=...)
 router.get('/recent', async (req, res) => {
     try {
+        const limitParam = parseInt(req.query.limit);
+        const limit = !isNaN(limitParam) && limitParam > 0 ? limitParam : 30;
+
         const activities = await ActivityLog.find()
             .populate('user', 'fullName email avatar branch year college skills')
             .sort({ createdAt: -1 })
-            .limit(15);
+            .limit(limit);
 
         return res.status(200).json({
             success: true,

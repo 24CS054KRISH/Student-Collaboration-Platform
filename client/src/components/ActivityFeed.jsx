@@ -16,14 +16,15 @@ function formatRelativeTime(dateString) {
   return `${Math.floor(diffInSeconds / 86400)}d ago`;
 }
 
-export default function ActivityFeed({ onSelectPeer }) {
+export default function ActivityFeed({ isPreview = false, onViewAllActivity, onSelectPeer }) {
   const [activities, setActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Initial fetch of recent activity log
   useEffect(() => {
+    const limit = isPreview ? 5 : 30;
     axios
-      .get("http://localhost:5000/api/activity/recent")
+      .get(`http://localhost:5000/api/activity/recent?limit=${limit}`)
       .then((res) => {
         if (res.data.success && Array.isArray(res.data.activities)) {
           setActivities(res.data.activities);
@@ -31,7 +32,7 @@ export default function ActivityFeed({ onSelectPeer }) {
       })
       .catch((err) => console.error("Error fetching activity feed:", err))
       .finally(() => setLoading(false));
-  }, []);
+  }, [isPreview]);
 
   // Listen for real-time activity socket broadcasts
   useEffect(() => {
@@ -39,12 +40,15 @@ export default function ActivityFeed({ onSelectPeer }) {
 
     socket.on("new_activity_event", (newAct) => {
       if (newAct && newAct._id) {
-        setActivities((prev) => [newAct, ...prev.filter((a) => a._id !== newAct._id)].slice(0, 15));
+        const maxItems = isPreview ? 5 : 30;
+        setActivities((prev) => [newAct, ...prev.filter((a) => a._id !== newAct._id)].slice(0, maxItems));
       }
     });
 
     return () => socket.disconnect();
-  }, []);
+  }, [isPreview]);
+
+  const displayedActivities = isPreview ? activities.slice(0, 5) : activities;
 
   return (
     <div className="bg-white border border-slate-200/60 rounded-2xl p-5 md:p-6 shadow-sm space-y-4">
@@ -54,7 +58,7 @@ export default function ActivityFeed({ onSelectPeer }) {
         <div className="flex items-center gap-2">
           <span className="w-2.5 h-2.5 bg-green-500 rounded-full animate-ping" />
           <h3 className="text-sm font-extrabold text-slate-800 uppercase tracking-wider">
-            Live Platform Activity Stream
+            {isPreview ? "Live Activity Preview" : "Live Platform Activity Stream"}
           </h3>
         </div>
         <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-full">
@@ -67,13 +71,13 @@ export default function ActivityFeed({ onSelectPeer }) {
         <div className="py-6 text-center text-xs text-slate-400 font-medium animate-pulse">
           Loading platform activity feed...
         </div>
-      ) : activities.length === 0 ? (
+      ) : displayedActivities.length === 0 ? (
         <div className="py-6 text-center text-xs text-slate-400 font-medium italic bg-slate-50 rounded-xl border border-slate-100">
           No platform activities logged yet. Launch a project or connect with peers to get started!
         </div>
       ) : (
-        <div className="space-y-3 max-h-[380px] overflow-y-auto pr-1 scrollbar-thin">
-          {activities.map((act) => {
+        <div className="space-y-3">
+          {displayedActivities.map((act) => {
             const user = act.user || {};
             const name = user.fullName || "Student";
             const avatar = user.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
@@ -130,6 +134,22 @@ export default function ActivityFeed({ onSelectPeer }) {
               </div>
             );
           })}
+        </div>
+      )}
+
+      {/* Footer "View All Activity" Button for Preview Mode */}
+      {isPreview && onViewAllActivity && (
+        <div className="pt-2 border-t border-slate-100 flex justify-center">
+          <button
+            type="button"
+            onClick={onViewAllActivity}
+            className="text-xs font-bold text-blue-600 hover:text-blue-700 py-1 px-3 hover:bg-blue-50 rounded-lg transition-colors cursor-pointer flex items-center gap-1.5 group"
+          >
+            <span>View All Activity</span>
+            <svg className="w-3.5 h-3.5 group-hover:translate-x-0.5 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+            </svg>
+          </button>
         </div>
       )}
 

@@ -20,6 +20,10 @@ export default function Dashboard({ onNavigate }) {
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem("activeTab") || "Dashboard";
   });
+  const [navHistory, setNavHistory] = useState(() => {
+    const savedTab = localStorage.getItem("activeTab") || "Dashboard";
+    return savedTab === "Dashboard" ? ["Dashboard"] : ["Dashboard", savedTab];
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTagFilter, setSelectedTagFilter] = useState("All");
@@ -32,13 +36,58 @@ export default function Dashboard({ onNavigate }) {
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [incomingMessages, setIncomingMessages] = useState([]);
 
-  const handleTabChange = (tabName) => {
+  const handleTabChange = (tabName, pushToHistory = true) => {
+    if (pushToHistory && tabName !== activeTab) {
+      setNavHistory((prev) => [...prev, tabName]);
+    }
     setActiveTab(tabName);
     localStorage.setItem("activeTab", tabName);
     if (tabName === "Messages") {
       setUnreadMessagesCount(0);
     }
   };
+
+  const handleGoBack = () => {
+    // 1. Close active modal overlays first
+    if (viewingProject) {
+      setViewingProject(null);
+      return;
+    }
+    if (selectedPeerForModal) {
+      setSelectedPeerForModal(null);
+      return;
+    }
+    if (editingProject) {
+      setEditingProject(null);
+      return;
+    }
+    if (showCreateModal) {
+      setShowCreateModal(false);
+      return;
+    }
+
+    // 2. Pop previous tab from history stack
+    if (navHistory.length > 1) {
+      const newHistory = [...navHistory];
+      newHistory.pop();
+      const previousTab = newHistory[newHistory.length - 1] || "Dashboard";
+      setNavHistory(newHistory);
+      setActiveTab(previousTab);
+      localStorage.setItem("activeTab", previousTab);
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = () => {
+      handleGoBack();
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [viewingProject, selectedPeerForModal, editingProject, showCreateModal, navHistory, activeTab]);
+
+  const canGoBack = Boolean(
+    viewingProject || selectedPeerForModal || editingProject || showCreateModal || (navHistory.length > 1 && activeTab !== "Dashboard")
+  );
 
   useEffect(() => {
     const loggedInUser = JSON.parse(localStorage.getItem("user") || "{}");
@@ -609,6 +658,16 @@ export default function Dashboard({ onNavigate }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2H6a2 2 0 01-2-2v-4zM14 16a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 01-2-2v-4z" />
       </svg>
     )},
+    { name: "All Projects", icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+      </svg>
+    )},
+    { name: "Activity Feed", icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+      </svg>
+    )},
     { name: "My Projects", icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -652,14 +711,18 @@ export default function Dashboard({ onNavigate }) {
   // Debounced server-side search and skill filtering
   useEffect(() => {
     const timer = setTimeout(() => {
-      fetchProjects({
+      const params = {
         search: searchQuery,
         skill: selectedTagFilter !== "All" ? selectedTagFilter : undefined
-      });
+      };
+      if (activeTab === "Dashboard") {
+        params.limit = 6;
+      }
+      fetchProjects(params);
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [searchQuery, selectedTagFilter]);
+  }, [searchQuery, selectedTagFilter, activeTab]);
 
   // Filtering projects list based on search and tags/skills
   const filteredProjects = projects;
@@ -681,6 +744,188 @@ export default function Dashboard({ onNavigate }) {
   const averageProgress = userProjects.length > 0 
     ? Math.round(userProjects.reduce((sum, p) => sum + (Number(p.progress) || 0), 0) / userProjects.length)
     : 0;
+
+  // Helper to render individual project card consistently across views
+  const renderProjectCard = (project) => {
+    const pId = project._id || project.id;
+    const appStatus = appliedProjects[pId];
+    const isApplying = applyingProjectId === pId;
+
+    return (
+      <div
+        key={pId}
+        className="group bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col justify-between"
+      >
+        <div>
+          {/* Header Status & Icon */}
+          <div className="flex items-center justify-between mb-4">
+            <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider uppercase ${
+              project.status === "Completed"
+                ? "bg-green-50 text-green-600 border border-green-100"
+                : project.status === "In Progress"
+                ? "bg-amber-50 text-amber-600 border border-amber-100"
+                : "bg-blue-50 text-blue-600 border border-blue-100"
+            }`}>
+              {project.status || "Open"}
+            </span>
+            
+            {project.isOwner && (
+              <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
+                Owner
+              </span>
+            )}
+          </div>
+
+          {/* Title & Description */}
+          <h3 className="text-base font-extrabold text-slate-900 leading-snug group-hover:text-blue-600 transition-colors">
+            {project.title}
+          </h3>
+          {project.category && (
+            <div className="mt-1 text-xs font-semibold text-blue-600">
+              Category: {project.category}
+            </div>
+          )}
+          <p className="text-xs text-slate-500 leading-relaxed font-normal mt-2 line-clamp-3">
+            {project.description}
+          </p>
+
+          {/* Required Skills */}
+          <div className="flex flex-wrap gap-1.5 mt-4">
+            {(project.requiredSkills || project.tags || []).map((skill, index) => (
+              <span
+                key={index}
+                className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600"
+              >
+                {skill}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Footer: Avatars, Progress & Action */}
+        <div className="mt-6 pt-4 border-t border-slate-100">
+          {/* Team Avatars & Progress */}
+          <div className="flex items-center justify-between text-xs font-semibold mb-3">
+            <div className="flex items-center -space-x-2">
+              {project.teamAvatars && project.teamAvatars.map((url, i) => (
+                <img
+                  key={i}
+                  className="w-6 h-6 rounded-full border-2 border-white object-cover shadow-sm"
+                  src={url}
+                  alt="Team Member"
+                />
+              ))}
+              {project.teamAvatars && project.teamSize > project.teamAvatars.length && (
+                <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-[8px] border-2 border-white font-bold text-slate-500">
+                  +{project.teamSize - project.teamAvatars.length}
+                </span>
+              )}
+              {(!project.teamAvatars || project.teamAvatars.length === 0) && (
+                <span className="text-slate-500 text-xs font-medium">
+                  Team Size: {project.teamSize || 0}
+                </span>
+              )}
+            </div>
+            <span className="text-slate-400 font-bold">{project.progress || 0}%</span>
+          </div>
+
+          {/* Progress Bar */}
+          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mb-4">
+            <div
+              className={`h-1.5 rounded-full ${
+                project.status === "Completed" ? "bg-green-500" : "bg-blue-600"
+              }`}
+              style={{ width: `${project.progress || 0}%` }}
+            />
+          </div>
+
+          {/* Action Buttons */}
+          <div className="flex gap-2">
+            <button
+              onClick={() => setViewingProject(project)}
+              className="flex-1 text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl transition-colors cursor-pointer"
+            >
+              View Details
+            </button>
+            {project.isOwner ? (
+              <button
+                onClick={() => {
+                  const updatedProjects = projects.map((p) => {
+                    const idMatch = (p.id && p.id === project.id) || (p._id && p._id === project._id);
+                    if (idMatch) {
+                      const nextStatus = p.status === "Planning" ? "In Progress" : p.status === "In Progress" ? "Completed" : "Planning";
+                      const nextProgress = nextStatus === "Completed" ? 100 : nextStatus === "In Progress" ? 50 : 0;
+                      return { ...p, status: nextStatus, progress: nextProgress };
+                    }
+                    return p;
+                  });
+                  setProjects(updatedProjects);
+                }}
+                className="px-3 py-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
+                title="Toggle Status"
+              >
+                Update Status
+              </button>
+            ) : (
+              (() => {
+                if (appStatus === "pending") {
+                  return (
+                    <button
+                      onClick={() => handleWithdrawApplication(pId)}
+                      className="px-3 py-2 bg-amber-50 hover:bg-red-50 text-amber-700 hover:text-red-600 border border-amber-200 hover:border-red-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 group"
+                      title="Click to withdraw application"
+                    >
+                      <svg className="w-3.5 h-3.5 text-amber-600 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span>Withdraw App</span>
+                    </button>
+                  );
+                } else if (appStatus === "accepted") {
+                  return (
+                    <button
+                      disabled
+                      className="px-3 py-2 bg-green-50 text-green-600 border border-green-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed flex items-center gap-1"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4.5 12.75l6 6 9-13.5" />
+                      </svg>
+                      Joined
+                    </button>
+                  );
+                } else {
+                  return (
+                    <button
+                      disabled={isApplying}
+                      onClick={() => openApplyModal(project)}
+                      className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                    >
+                      {isApplying ? (
+                        <>
+                          <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                          </svg>
+                          Applying...
+                        </>
+                      ) : (
+                        <>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4.5v15m7.5-7.5h-15" />
+                          </svg>
+                          Apply to Join
+                        </>
+                      )}
+                    </button>
+                  );
+                }
+              })()
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // Handle creating a new project
   const handleCreateProjectSubmit = async (e) => {
@@ -794,6 +1039,18 @@ export default function Dashboard({ onNavigate }) {
           </span>
         </div>
         <div className="flex items-center gap-2">
+          {canGoBack && (
+            <button
+              type="button"
+              onClick={handleGoBack}
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shrink-0 cursor-pointer"
+            >
+              <svg className="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+              </svg>
+              <span>Back</span>
+            </button>
+          )}
           {renderNotificationBellAndDropdown(true)}
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -906,15 +1163,29 @@ export default function Dashboard({ onNavigate }) {
         
         {/* DESKTOP HEADER / TOPBAR */}
         <div className="hidden md:flex items-center justify-between mb-8 pb-4 border-b border-slate-200/60 relative">
-          <div>
-            <h1 className="text-xl font-extrabold text-slate-800">
-              {activeTab === "Dashboard" ? `Welcome back, ${userProfile.name.split(" ")[0]}! 👋` : activeTab}
-            </h1>
-            <p className="text-xs text-slate-400 font-semibold">
-              {activeTab === "Dashboard" 
-                ? "Here's what's happening on your collaboration platform today."
-                : `Manage and view your ${activeTab.toLowerCase()} space.`}
-            </p>
+          <div className="flex items-center gap-3">
+            {canGoBack && (
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl shadow-sm transition-all cursor-pointer active:scale-95 shrink-0"
+              >
+                <svg className="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                </svg>
+                <span>Back</span>
+              </button>
+            )}
+            <div>
+              <h1 className="text-xl font-extrabold text-slate-800">
+                {activeTab}
+              </h1>
+              <p className="text-xs text-slate-400 font-semibold">
+                {activeTab === "Dashboard" 
+                  ? "Overview & collaboration activity summary"
+                  : `Manage and view your ${activeTab.toLowerCase()} space.`}
+              </p>
+            </div>
           </div>
           <div className="flex items-center gap-4 relative">
              {renderNotificationBellAndDropdown(false)}
@@ -986,43 +1257,7 @@ export default function Dashboard({ onNavigate }) {
               </div>
             </div>
 
-            {/* 2. Search Bar + Filters */}
-            <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-4 md:p-6 space-y-4">
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
-                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                  </svg>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Search projects by title, description, or stack..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="block w-full pl-11 pr-4 py-3.5 text-sm text-slate-900 border border-slate-200 rounded-xl bg-slate-50 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
-                />
-              </div>
-
-              {/* Tag Filters */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
-                <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">Filter tags:</span>
-                {["All", "React", "Python", "Node.js", "Firebase", "MongoDB", "UI/UX Design"].map((tag) => (
-                  <button
-                    key={tag}
-                    onClick={() => setSelectedTagFilter(tag)}
-                    className={`px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${
-                      selectedTagFilter === tag
-                        ? "bg-blue-600 text-white shadow-sm shadow-blue-500/10"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-                    }`}
-                  >
-                    {tag}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 3. 4 Statistics Cards */}
+            {/* 2. 4 Statistics Cards */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
               
               {/* Stat Card 1: Active Projects */}
@@ -1090,7 +1325,6 @@ export default function Dashboard({ onNavigate }) {
               </div>
 
               {/* Stat Card 3: Pending Applications */}
-              {/* TODO: Display the number of pending join requests once the Join Request module is implemented */}
               <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm p-6 flex items-center justify-between hover:shadow-md transition-shadow">
                 <div>
                   <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Pending Requests</p>
@@ -1122,10 +1356,7 @@ export default function Dashboard({ onNavigate }) {
 
             </div>
 
-            {/* 3.5 Live Activity Stream */}
-            <ActivityFeed onSelectPeer={(peer) => setSelectedPeerForModal(peer)} />
-
-            {/* 4. Recent Projects Section */}
+            {/* 3. Recent Projects Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -1156,189 +1387,118 @@ export default function Dashboard({ onNavigate }) {
                   <p className="text-sm font-semibold text-slate-500">No projects found.</p>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredProjects.map((project) => (
-                    <div
-                      key={project.id || project._id}
-                      className="group bg-white border border-slate-200/60 rounded-2xl p-6 shadow-sm hover:shadow-lg hover:border-blue-200 transition-all duration-300 flex flex-col justify-between"
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {filteredProjects.slice(0, 6).map((project) => renderProjectCard(project))}
+                  </div>
+
+                  {/* View All Projects Button */}
+                  <div className="flex justify-center pt-2 pb-2">
+                    <button
+                      onClick={() => handleTabChange("All Projects")}
+                      className="px-6 py-3 bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-blue-200 text-blue-600 hover:text-blue-700 font-bold text-xs rounded-xl shadow-sm hover:shadow transition-all cursor-pointer flex items-center gap-2 group"
                     >
-                      <div>
-                        {/* Header Status & Icon */}
-                        <div className="flex items-center justify-between mb-4">
-                          <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold tracking-wider uppercase ${
-                            project.status === "Completed"
-                              ? "bg-green-50 text-green-600 border border-green-100"
-                              : project.status === "In Progress"
-                              ? "bg-amber-50 text-amber-600 border border-amber-100"
-                              : "bg-blue-50 text-blue-600 border border-blue-100"
-                          }`}>
-                            {project.status || "Open"}
-                          </span>
-                          
-                          {project.isOwner && (
-                            <span className="text-[10px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded">
-                              Owner
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Title & Description */}
-                        <h3 className="text-base font-extrabold text-slate-900 leading-snug group-hover:text-blue-600 transition-colors">
-                          {project.title}
-                        </h3>
-                        {project.category && (
-                          <div className="mt-1 text-xs font-semibold text-blue-600">
-                            Category: {project.category}
-                          </div>
-                        )}
-                        <p className="text-xs text-slate-500 leading-relaxed font-normal mt-2 line-clamp-3">
-                          {project.description}
-                        </p>
-
-                        {/* Required Skills */}
-                        <div className="flex flex-wrap gap-1.5 mt-4">
-                          {(project.requiredSkills || project.tags || []).map((skill, index) => (
-                            <span
-                              key={index}
-                              className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600"
-                            >
-                              {skill}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Footer: Avatars, Progress & Action */}
-                      <div className="mt-6 pt-4 border-t border-slate-100">
-                        {/* Team Avatars & Progress */}
-                        <div className="flex items-center justify-between text-xs font-semibold mb-3">
-                          <div className="flex items-center -space-x-2">
-                            {project.teamAvatars && project.teamAvatars.map((url, i) => (
-                              <img
-                                key={i}
-                                className="w-6 h-6 rounded-full border-2 border-white object-cover shadow-sm"
-                                src={url}
-                                alt="Team Member"
-                              />
-                            ))}
-                            {project.teamAvatars && project.teamSize > project.teamAvatars.length && (
-                              <span className="flex items-center justify-center w-6 h-6 rounded-full bg-slate-100 text-[8px] border-2 border-white font-bold text-slate-500">
-                                +{project.teamSize - project.teamAvatars.length}
-                              </span>
-                            )}
-                            {(!project.teamAvatars || project.teamAvatars.length === 0) && (
-                              <span className="text-slate-500 text-xs font-medium">
-                                Team Size: {project.teamSize || 0}
-                              </span>
-                            )}
-                          </div>
-                          <span className="text-slate-400 font-bold">{project.progress || 0}%</span>
-                        </div>
-
-                        {/* Progress Bar */}
-                        <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden mb-4">
-                          <div
-                            className={`h-1.5 rounded-full ${
-                              project.status === "Completed" ? "bg-green-500" : "bg-blue-600"
-                            }`}
-                            style={{ width: `${project.progress || 0}%` }}
-                          />
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => setViewingProject(project)}
-                            className="flex-1 text-center py-2 px-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 rounded-xl transition-colors cursor-pointer"
-                          >
-                            View Details
-                          </button>
-                          {project.isOwner ? (
-                            <button
-                              onClick={() => {
-                                const updatedProjects = projects.map((p) => {
-                                  const idMatch = (p.id && p.id === project.id) || (p._id && p._id === project._id);
-                                  if (idMatch) {
-                                    const nextStatus = p.status === "Planning" ? "In Progress" : p.status === "In Progress" ? "Completed" : "Planning";
-                                    const nextProgress = nextStatus === "Completed" ? 100 : nextStatus === "In Progress" ? 50 : 0;
-                                    return { ...p, status: nextStatus, progress: nextProgress };
-                                  }
-                                  return p;
-                                });
-                                setProjects(updatedProjects);
-                              }}
-                              className="px-3 py-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
-                              title="Toggle Status"
-                            >
-                              Update Status
-                            </button>
-                          ) : (
-                            (() => {
-                              const pId = project._id || project.id;
-                              const appStatus = appliedProjects[pId];
-                              const isApplying = applyingProjectId === pId;
-
-                              if (appStatus === "pending") {
-                                return (
-                                  <button
-                                    onClick={() => handleWithdrawApplication(pId)}
-                                    className="px-3 py-2 bg-amber-50 hover:bg-red-50 text-amber-700 hover:text-red-600 border border-amber-200 hover:border-red-200 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1 group"
-                                    title="Click to withdraw application"
-                                  >
-                                    <svg className="w-3.5 h-3.5 text-amber-600 group-hover:text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span>Withdraw App</span>
-                                  </button>
-                                );
-                              } else if (appStatus === "accepted") {
-                                return (
-                                  <button
-                                    disabled
-                                    className="px-3 py-2 bg-green-50 text-green-600 border border-green-200 text-xs font-bold rounded-xl opacity-90 cursor-not-allowed flex items-center gap-1"
-                                  >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M4.5 12.75l6 6 9-13.5" />
-                                    </svg>
-                                    Joined
-                                  </button>
-                                );
-                              } else {
-                                return (
-                                  <button
-                                    disabled={isApplying}
-                                    onClick={() => openApplyModal(project)}
-                                    className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-sm transition-all active:scale-[0.98] cursor-pointer flex items-center gap-1 disabled:opacity-50"
-                                  >
-                                    {isApplying ? (
-                                      <>
-                                        <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
-                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                                        </svg>
-                                        Applying...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4.5v15m7.5-7.5h-15" />
-                                        </svg>
-                                        Apply to Join
-                                      </>
-                                    )}
-                                  </button>
-                                );
-                              }
-                            })()
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      <span>View All Projects</span>
+                      <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3" />
+                      </svg>
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
 
+            {/* 4. Live Activity Preview */}
+            <ActivityFeed
+              isPreview={true}
+              onViewAllActivity={() => handleTabChange("Activity Feed")}
+              onSelectPeer={(peer) => setSelectedPeerForModal(peer)}
+            />
+          </div>
+        )}
+
+        {/* ============================================== */}
+        {/* TAB CONTENT: ALL PROJECTS */}
+        {/* ============================================== */}
+        {activeTab === "All Projects" && (
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200/60 pb-5">
+              <div>
+                <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">All Collaboration Projects</h2>
+                <p className="text-xs font-semibold text-slate-400 mt-1">Browse, filter, and apply to all active student projects across colleges</p>
+              </div>
+              <button
+                onClick={() => setShowCreateModal(true)}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-blue-600 text-white hover:bg-blue-700 px-4 py-2.5 text-xs font-bold shadow-md shadow-blue-500/10 hover:shadow-blue-500/15 transition-all cursor-pointer self-start sm:self-auto shrink-0"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 4v16m8-8H4" />
+                </svg>
+                New Project
+              </button>
+            </div>
+
+            {/* Filter controls */}
+            <div className="flex flex-col md:flex-row items-center justify-between gap-4 bg-white p-4 rounded-2xl border border-slate-200/60 shadow-sm">
+              <div className="relative w-full md:w-80">
+                <svg className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                <input
+                  type="text"
+                  placeholder="Search projects..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200/80 rounded-xl pl-9 pr-4 py-2 text-xs font-medium text-slate-700 placeholder-slate-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                {["All", "Web Dev", "AI/ML", "Mobile App", "React"].map((tag) => (
+                  <button
+                    key={tag}
+                    onClick={() => setSelectedTagFilter(tag)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer shrink-0 ${
+                      selectedTagFilter === tag
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200/60"
+                    }`}
+                  >
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Projects Grid */}
+            {loading ? (
+              <div className="flex justify-center items-center py-16">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                <span className="ml-2 text-sm font-medium text-slate-500 animate-pulse">Loading all projects...</span>
+              </div>
+            ) : filteredProjects.length === 0 ? (
+              <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-16 text-center">
+                <p className="text-sm font-semibold text-slate-500">No projects found matching your search.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 pb-8">
+                {filteredProjects.map((project) => renderProjectCard(project))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ============================================== */}
+        {/* TAB CONTENT: ACTIVITY FEED */}
+        {/* ============================================== */}
+        {activeTab === "Activity Feed" && (
+          <div className="space-y-6">
+            <div className="border-b border-slate-200/60 pb-5">
+              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Platform Activity Feed</h2>
+              <p className="text-xs font-semibold text-slate-400 mt-1">Live real-time stream of all collaboration events across the platform</p>
+            </div>
+
+            <ActivityFeed isPreview={false} onSelectPeer={(peer) => setSelectedPeerForModal(peer)} />
           </div>
         )}
 
