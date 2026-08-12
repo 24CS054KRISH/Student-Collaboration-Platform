@@ -81,6 +81,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
         for (const peer of directChats) {
             const lastMsg = await Message.findOne({
                 chatType: 'direct',
+                clearedBy: { $ne: userId },
                 $or: [
                     { sender: userId, receiver: peer._id },
                     { sender: peer._id, receiver: userId }
@@ -89,6 +90,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 
             const unreadCount = await Message.countDocuments({
                 chatType: 'direct',
+                clearedBy: { $ne: userId },
                 sender: peer._id,
                 receiver: userId,
                 readBy: { $ne: userId }
@@ -102,11 +104,13 @@ router.get('/conversations', authMiddleware, async (req, res) => {
         for (const team of teamChats) {
             const lastMsg = await Message.findOne({
                 chatType: 'team',
+                clearedBy: { $ne: userId },
                 project: team._id
             }).sort({ createdAt: -1 });
 
             const unreadCount = await Message.countDocuments({
                 chatType: 'team',
+                clearedBy: { $ne: userId },
                 project: team._id,
                 sender: { $ne: userId },
                 readBy: { $ne: userId }
@@ -153,6 +157,7 @@ router.get('/direct/:peerId', authMiddleware, async (req, res) => {
 
         const messages = await Message.find({
             chatType: 'direct',
+            clearedBy: { $ne: userId },
             $or: [
                 { sender: userId, receiver: peerId },
                 { sender: peerId, receiver: userId }
@@ -223,6 +228,7 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
 
         const messages = await Message.find({
             chatType: 'team',
+            clearedBy: { $ne: userId },
             project: projectId
         })
             .populate('sender', 'fullName avatar')
@@ -297,6 +303,204 @@ router.post('/send', authMiddleware, async (req, res) => {
         return res.status(500).json({
             success: false,
             message: "Server error while sending message"
+        });
+    }
+});
+
+/**
+ * PUT /api/messages/edit/:messageId
+ * Edit own message
+ */
+router.put('/edit/:messageId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { messageId } = req.params;
+        const { content } = req.body;
+
+        if (!content || !content.trim()) {
+            return res.status(400).json({
+                success: false,
+                message: "Message content cannot be empty"
+            });
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({
+                success: false,
+                message: "Message not found"
+            });
+        }
+
+        // Ownership verification
+        if (message.sender.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized: You can only edit your own messages"
+            });
+        }
+
+        if (message.isDeleted) {
+            return res.status(400).json({
+                success: false,
+                message: "Deleted messages cannot be edited"
+            });
+        }
+
+        message.content = content.trim();
+        message.isEdited = true;
+        await message.save();
+
+        const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+
+        // Emit real-time edit event if Socket.io is available on req.app
+        const io = req.app.get('io');
+        if (io) {
+            let roomId = "";
+            if (updatedMessage.chatType === "direct") {
+                const sortedIds = [updatedMessage.sender._id.toString(), updatedMessage.receiver.toString()].sort();
+                roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+            } else {
+                roomId = `project_${updatedMessage.project.toString()}`;
+            }
+            io.to(roomId).emit("message_edited", updatedMessage);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Message edited successfully",
+            data: updatedMessage
+        });
+    } catch (error) {
+        console.error("Error editing message:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while editing message"
+        });
+    }
+});
+
+/**
+ * DELETE /api/messages/delete/:messageId
+ * Delete own message (soft delete with placeholder)
+ */
+router.delete('/delete/:messageId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { messageId } = req.params;
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({
+                success: false,
+                message: "Message not found"
+            });
+        }
+
+        // Ownership verification
+        if (message.sender.toString() !== userId.toString()) {
+            return res.status(403).json({
+                success: false,
+                message: "Unauthorized: You can only delete your own messages"
+            });
+        }
+
+        message.content = "This message was deleted";
+        message.isDeleted = true;
+        await message.save();
+
+        const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+
+        // Emit real-time delete event via Socket.io
+        const io = req.app.get('io');
+        if (io) {
+            let roomId = "";
+            if (updatedMessage.chatType === "direct") {
+                const sortedIds = [updatedMessage.sender._id.toString(), updatedMessage.receiver.toString()].sort();
+                roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+            } else {
+                roomId = `project_${updatedMessage.project.toString()}`;
+            }
+            io.to(roomId).emit("message_deleted", updatedMessage);
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: "Message deleted successfully",
+            data: updatedMessage
+        });
+    } catch (error) {
+        console.error("Error deleting message:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while deleting message"
+        });
+    }
+});
+
+/**
+ * POST /api/messages/delete-for-me/:messageId
+ * Hide single message for current user only
+ */
+router.post('/delete-for-me/:messageId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { messageId } = req.params;
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({
+                success: false,
+                message: "Message not found"
+            });
+        }
+
+        await Message.findByIdAndUpdate(messageId, {
+            $addToSet: { clearedBy: userId }
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: "Message hidden for current user"
+        });
+    } catch (error) {
+        console.error("Error deleting message for me:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while removing message"
+        });
+    }
+});
+
+/**
+ * POST /api/messages/clear-direct/:peerId
+ * Clear direct conversation history ONLY for the logged-in user
+ */
+router.post('/clear-direct/:peerId', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { peerId } = req.params;
+
+        await Message.updateMany(
+            {
+                chatType: 'direct',
+                $or: [
+                    { sender: userId, receiver: peerId },
+                    { sender: peerId, receiver: userId }
+                ]
+            },
+            { $addToSet: { clearedBy: userId } }
+        );
+
+        return res.status(200).json({
+            success: true,
+            message: "Chat cleared successfully for current user"
+        });
+    } catch (error) {
+        console.error("Error clearing direct chat:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while clearing chat"
         });
     }
 });

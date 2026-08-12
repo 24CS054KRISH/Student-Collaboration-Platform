@@ -54,3 +54,60 @@ export const sendMessage = async (messageData) => {
         throw error;
     }
 };
+
+/**
+ * Edit a message via REST endpoint.
+ * @param {string} messageId
+ * @param {string} content
+ * @returns {Promise<Object>} { success: true, data }
+ */
+export const editMessage = async (messageId, content) => {
+    try {
+        const response = await API.put(`/messages/edit/${messageId}`, { content });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Delete a message via REST endpoint.
+ * @param {string} messageId
+ * @returns {Promise<Object>} { success: true, data }
+ */
+export const deleteMessage = async (messageId) => {
+    try {
+        const response = await API.delete(`/messages/delete/${messageId}`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Clear direct conversation history for current user.
+ * @param {string} peerId
+ * @returns {Promise<Object>} { success: true }
+ */
+export const clearDirectChat = async (peerId) => {
+    try {
+        const response = await API.post(`/messages/clear-direct/${peerId}`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Hide a single message only for the current user (Delete for me).
+ * @param {string} messageId
+ * @returns {Promise<Object>} { success: true }
+ */
+export const deleteMessageForMe = async (messageId) => {
+    try {
+        const response = await API.post(`/messages/delete-for-me/${messageId}`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

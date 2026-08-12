@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { getConversations, getDirectMessages, getProjectMessages, sendMessage } from "../api/messageApi";
+import { getConversations, getDirectMessages, getProjectMessages, sendMessage, editMessage, deleteMessage, clearDirectChat, deleteMessageForMe } from "../api/messageApi";
 import { useToast } from "./Toast";
 
 const SOCKET_SERVER_URL = "http://localhost:5000";
@@ -22,6 +22,17 @@ export default function Messages({ initialPeer, onSelectPeer }) {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessageText, setNewMessageText] = useState("");
   const [sending, setSending] = useState(false);
+
+  // Message Management States
+  const [editingMessageId, setEditingMessageId] = useState(null);
+  const [editText, setEditText] = useState("");
+  // deleteModal: { msg, mode: 'everyone' | 'me' } | null
+  const [deleteModal, setDeleteModal] = useState(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
+  const [clearingChat, setClearingChat] = useState(false);
+  // contextMenu: { visible, x, y, msg } | null
+  const [contextMenu, setContextMenu] = useState(null);
+  const chatContainerRef = useRef(null);
 
   const socketRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -97,6 +108,18 @@ export default function Messages({ initialPeer, onSelectPeer }) {
           return { ...prev, [channelKey]: currentCount + 1 };
         });
       }
+    });
+
+    socketRef.current.on("message_edited", (updatedMessage) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === updatedMessage._id ? updatedMessage : msg))
+      );
+    });
+
+    socketRef.current.on("message_deleted", (updatedMessage) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === updatedMessage._id ? updatedMessage : msg))
+      );
     });
 
     return () => {
@@ -286,6 +309,103 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     }
   };
 
+  // 5. Message Edit Handler
+  const handleSaveEdit = async (messageId) => {
+    if (!editText || !editText.trim()) return;
+    try {
+      const res = await editMessage(messageId, editText.trim());
+      if (res.success && res.data) {
+        setMessages((prev) =>
+          prev.map((msg) => (msg._id === messageId ? res.data : msg))
+        );
+        showToast("Message updated", "success");
+      }
+    } catch (err) {
+      console.error("Failed to edit message:", err);
+      showToast(err.response?.data?.message || "Failed to edit message", "error");
+    } finally {
+      setEditingMessageId(null);
+      setEditText("");
+    }
+  };
+
+  // 6. Delete for Everyone
+  const handleDeleteForEveryone = async () => {
+    if (!deleteModal) return;
+    try {
+      const res = await deleteMessage(deleteModal.msg._id);
+      if (res.success && res.data) {
+        setMessages((prev) =>
+          prev.map((msg) => (msg._id === deleteModal.msg._id ? res.data : msg))
+        );
+        showToast("Message deleted for everyone", "success");
+      }
+    } catch (err) {
+      console.error("Failed to delete message:", err);
+      showToast(err.response?.data?.message || "Failed to delete message", "error");
+    } finally {
+      setDeleteModal(null);
+    }
+  };
+
+  // 7. Delete for Me only
+  const handleDeleteForMe = async () => {
+    if (!deleteModal) return;
+    try {
+      await deleteMessageForMe(deleteModal.msg._id);
+      setMessages((prev) => prev.filter((msg) => msg._id !== deleteModal.msg._id));
+      showToast("Message removed from your view", "success");
+    } catch (err) {
+      console.error("Failed to delete message for me:", err);
+      showToast(err.response?.data?.message || "Failed to remove message", "error");
+    } finally {
+      setDeleteModal(null);
+    }
+  };
+
+  // 8. Clear Chat Handler
+  const handleClearChat = async () => {
+    if (!activeChannel) return;
+    try {
+      setClearingChat(true);
+      if (activeChannel.type === "direct") {
+        await clearDirectChat(activeChannel.id);
+      }
+      setMessages([]);
+      showToast("Chat cleared successfully", "success");
+    } catch (err) {
+      console.error("Failed to clear chat:", err);
+      showToast(err.response?.data?.message || "Failed to clear chat", "error");
+    } finally {
+      setClearingChat(false);
+      setShowClearConfirm(false);
+    }
+  };
+
+  // 9. Right-click context menu handler
+  const handleContextMenu = (e, msg) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const MENU_W = 200;
+    const MENU_H = 120;
+    const x = Math.min(e.clientX, window.innerWidth - MENU_W - 8);
+    const y = Math.min(e.clientY, window.innerHeight - MENU_H - 8);
+    setContextMenu({ visible: true, x, y, msg });
+  };
+
+  const closeContextMenu = () => setContextMenu(null);
+
+  // Close context menu on any outside click or scroll
+  useEffect(() => {
+    const handler = () => closeContextMenu();
+    document.addEventListener("click", handler);
+    document.addEventListener("scroll", handler, true);
+    return () => {
+      document.removeEventListener("click", handler);
+      document.removeEventListener("scroll", handler, true);
+    };
+  }, []);
+
   // Filter conversations based on sidebar search input
   const filteredDirectChats = conversations.directChats.filter((c) =>
     (c.name || "").toLowerCase().includes(channelSearch.toLowerCase()) ||
@@ -298,8 +418,8 @@ export default function Messages({ initialPeer, onSelectPeer }) {
   );
 
   return (
-    <div className="space-y-6 animate-fadeIn">
-      {/* Header */}
+    <>
+      <div className="space-y-6 animate-fadeIn">
       <div>
         <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Messages & Channels</h1>
         <p className="text-sm font-medium text-slate-500 mt-1">
@@ -536,6 +656,17 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setShowClearConfirm(true)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-600 hover:text-red-600 bg-slate-100 hover:bg-red-50 rounded-xl transition cursor-pointer"
+                    title="Clear chat for me"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                    <span>Clear Chat</span>
+                  </button>
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold bg-green-50 text-green-600 border border-green-100">
                     <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                     Live Sync
@@ -577,10 +708,13 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                       ? new Date(msg.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                       : "";
 
+                    const isEditingThis = editingMessageId === msg._id;
+
                     return (
                       <div
                         key={msg._id || msg.id || Math.random()}
                         className={`flex items-end gap-2.5 ${isSelf ? "justify-end" : "justify-start"}`}
+                        onContextMenu={(e) => handleContextMenu(e, msg)}
                       >
                         {!isSelf && (
                           <img
@@ -594,18 +728,45 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                           {!isSelf && activeChannel.type === "team" && (
                             <p className="text-[10px] font-bold text-slate-500 pl-1">{senderName}</p>
                           )}
-                          <div
-                            className={`px-4 py-2.5 text-xs font-medium leading-relaxed whitespace-pre-wrap shadow-sm ${
-                              isSelf
-                                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl rounded-tr-none"
-                                : "bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tl-none"
-                            }`}
-                          >
-                            {msg.content}
+
+                          {isEditingThis ? (
+                            <div className="bg-white border border-blue-300 p-2.5 rounded-2xl shadow-md space-y-2 text-left">
+                              <textarea
+                                value={editText}
+                                autoFocus
+                                onChange={(e) => setEditText(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSaveEdit(msg._id); }
+                                  if (e.key === "Escape") { setEditingMessageId(null); setEditText(""); }
+                                }}
+                                className="w-full text-xs text-slate-800 p-2 border border-slate-200 rounded-xl focus:outline-none focus:border-blue-600 resize-none"
+                                rows={2}
+                              />
+                              <div className="flex items-center justify-end gap-2">
+                                <button type="button" onClick={() => { setEditingMessageId(null); setEditText(""); }} className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100 rounded-lg cursor-pointer">Cancel</button>
+                                <button type="button" onClick={() => handleSaveEdit(msg._id)} className="px-3 py-1 text-[11px] font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-lg shadow-sm cursor-pointer">Save</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div
+                              className={`px-4 py-2.5 text-xs font-medium leading-relaxed whitespace-pre-wrap shadow-sm select-text cursor-context-menu ${
+                                msg.isDeleted
+                                  ? "bg-slate-100 text-slate-400 italic border border-slate-200/80 rounded-2xl"
+                                  : isSelf
+                                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-2xl rounded-tr-none"
+                                  : "bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tl-none"
+                              }`}
+                            >
+                              {msg.content}
+                            </div>
+                          )}
+
+                          <div className={`flex items-center gap-1 text-[9px] font-semibold text-slate-400 px-1 ${isSelf ? "justify-end" : "justify-start"}`}>
+                            <span>{timeStr}</span>
+                            {msg.isEdited && !msg.isDeleted && (
+                              <span className="italic text-slate-400 font-normal">• (Edited)</span>
+                            )}
                           </div>
-                          <span className={`block text-[9px] font-semibold text-slate-400 px-1 ${isSelf ? "text-right" : "text-left"}`}>
-                            {timeStr}
-                          </span>
                         </div>
                       </div>
                     );
@@ -613,6 +774,78 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                 )}
                 <div ref={messagesEndRef} />
               </div>
+
+              {/* Clear Chat Confirmation Modal */}
+              {showClearConfirm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4">
+                    <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">Clear Conversation?</h3>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        This will clear the message history for you. Other participants will still be able to view the chat history.
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        disabled={clearingChat}
+                        onClick={() => setShowClearConfirm(false)}
+                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        disabled={clearingChat}
+                        onClick={handleClearChat}
+                        className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md cursor-pointer disabled:opacity-50"
+                      >
+                        {clearingChat ? "Clearing..." : "Clear Chat"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Delete Message Confirmation Modal */}
+              {deleteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+                  <div className="bg-white rounded-2xl border border-slate-200 p-6 max-w-sm w-full shadow-2xl space-y-4">
+                    <div className="w-10 h-10 rounded-full bg-red-50 text-red-600 flex items-center justify-center">
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-extrabold text-slate-900">
+                        {deleteModal.mode === "everyone" ? "Delete for Everyone?" : "Remove for Me?"}
+                      </h3>
+                      <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                        {deleteModal.mode === "everyone"
+                          ? "This message will be replaced with a placeholder for all participants."
+                          : "This message will be hidden only from your view. Other participants can still see it."}
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button type="button" onClick={() => setDeleteModal(null)} className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-xl cursor-pointer">
+                        Cancel
+                      </button>
+                      <button
+                        type="button"
+                        onClick={deleteModal.mode === "everyone" ? handleDeleteForEveryone : handleDeleteForMe}
+                        className="px-4 py-2 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-xl shadow-md cursor-pointer"
+                      >
+                        {deleteModal.mode === "everyone" ? "Delete for Everyone" : "Remove for Me"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Input Bar */}
               <div className="p-4 bg-white border-t border-slate-200/80 shrink-0">
@@ -652,9 +885,42 @@ export default function Messages({ initialPeer, onSelectPeer }) {
             </div>
           )}
 
-        </div>
-
       </div>
     </div>
+  </div>
+
+      {/* Right-click Context Menu — rendered as fixed overlay */}
+      {contextMenu?.visible && (() => {
+        const ctxMsg = contextMenu.msg;
+        const senderObj = typeof ctxMsg.sender === "object" ? ctxMsg.sender : {};
+        const senderId = senderObj._id || ctxMsg.sender;
+        const isSelfMsg = String(senderId) === String(currentUserId);
+        return (
+          <div
+            className="fixed z-[9999] min-w-[180px] bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 overflow-hidden"
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {isSelfMsg && !ctxMsg.isDeleted && (
+              <button type="button" onClick={() => { setEditingMessageId(ctxMsg._id); setEditText(ctxMsg.content); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition text-left">
+                <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Edit
+              </button>
+            )}
+            {isSelfMsg && !ctxMsg.isDeleted && (
+              <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "everyone" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition text-left">
+                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                Delete for everyone
+              </button>
+            )}
+            {isSelfMsg && !ctxMsg.isDeleted && <div className="my-1 border-t border-slate-100" />}
+            <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "me" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 transition text-left">
+              <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
+              Delete for me
+            </button>
+          </div>
+        );
+      })()}
+    </>
   );
 }

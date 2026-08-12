@@ -88,6 +88,44 @@ io.on("connection", (socket) => {
         }
     });
 
+    // Handle editing message in real time
+    socket.on("edit_message", async (data) => {
+        try {
+            const { messageId, senderId, content, roomId } = data;
+            if (!content || !content.trim()) return;
+
+            const message = await Message.findById(messageId);
+            if (!message || message.sender.toString() !== senderId || message.isDeleted) return;
+
+            message.content = content.trim();
+            message.isEdited = true;
+            await message.save();
+
+            const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+            io.to(roomId).emit("message_edited", updatedMessage);
+        } catch (err) {
+            console.error("Error processing socket message edit:", err);
+        }
+    });
+
+    // Handle deleting message in real time
+    socket.on("delete_message", async (data) => {
+        try {
+            const { messageId, senderId, roomId } = data;
+            const message = await Message.findById(messageId);
+            if (!message || message.sender.toString() !== senderId) return;
+
+            message.content = "This message was deleted";
+            message.isDeleted = true;
+            await message.save();
+
+            const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+            io.to(roomId).emit("message_deleted", updatedMessage);
+        } catch (err) {
+            console.error("Error processing socket message delete:", err);
+        }
+    });
+
     socket.on("disconnect", () => {
         console.log(`🔥 Socket client disconnected: ${socket.id}`);
     });
