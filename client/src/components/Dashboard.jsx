@@ -849,17 +849,19 @@ export default function Dashboard({ onNavigate }) {
             </button>
             {project.isOwner ? (
               <button
-                onClick={() => {
-                  const updatedProjects = projects.map((p) => {
-                    const idMatch = (p.id && p.id === project.id) || (p._id && p._id === project._id);
-                    if (idMatch) {
-                      const nextStatus = p.status === "Planning" ? "In Progress" : p.status === "In Progress" ? "Completed" : "Planning";
-                      const nextProgress = nextStatus === "Completed" ? 100 : nextStatus === "In Progress" ? 50 : 0;
-                      return { ...p, status: nextStatus, progress: nextProgress };
+                onClick={async () => {
+                  const nextStatus = project.status === "Planning" ? "In Progress" : project.status === "In Progress" ? "Completed" : "Planning";
+                  const nextProgress = nextStatus === "Completed" ? 100 : nextStatus === "In Progress" ? 50 : 0;
+                  try {
+                    const res = await updateProject(project._id || project.id, { status: nextStatus, progress: nextProgress });
+                    if (res.success) {
+                      await fetchProjects();
+                      showToast("Status updated successfully", "success");
                     }
-                    return p;
-                  });
-                  setProjects(updatedProjects);
+                  } catch (err) {
+                    console.error("Error updating status:", err);
+                    showToast("Failed to update status", "error");
+                  }
                 }}
                 className="px-3 py-2 bg-blue-50 text-blue-600 border border-blue-100 hover:bg-blue-100 text-xs font-bold rounded-xl transition-colors cursor-pointer"
                 title="Toggle Status"

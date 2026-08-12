@@ -67,7 +67,7 @@ const attachMembersToProjects = async (projects) => {
 // POST /create
 router.post('/create', authMiddleware, async (req, res) => {
     try {
-        const { title, description, category, techStack, requiredSkills, teamSize } = req.body;
+        const { title, description, category, techStack, requiredSkills, teamSize, progress, status } = req.body;
 
         // Basic validation
         if (!title || !description || !category) {
@@ -84,6 +84,8 @@ router.post('/create', authMiddleware, async (req, res) => {
             techStack,
             requiredSkills,
             teamSize,
+            status: status || 'Open',
+            progress: progress !== undefined ? (Number(progress) || 0) : 0,
             createdBy: req.user
         });
 
@@ -304,7 +306,7 @@ const updateProject = async (req, res) => {
         if (teamSize !== undefined) project.teamSize = teamSize;
         if (requiredSkills !== undefined) project.requiredSkills = requiredSkills;
         if (status !== undefined) project.status = status;
-        if (progress !== undefined) project.progress = progress;
+        if (progress !== undefined) project.progress = isNaN(parseInt(progress, 10)) ? 0 : parseInt(progress, 10);
 
         const savedProject = await project.save();
         const populatedProject = await Project.findById(savedProject._id).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio');

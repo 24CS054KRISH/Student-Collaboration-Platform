@@ -64,22 +64,22 @@ export default function MyProjects({ projects, setProjects, onCreateClick }) {
           isOwner: true
         };
 
-        setMyProjects(myProjects.map((p) => {
-          if (updated._id && p._id === updated._id) return updated;
-          if (updated.id && p.id === updated.id) return updated;
-          return p;
+        setMyProjects((prev) => prev.map((p) => {
+          const pId = String(p._id || p.id);
+          const uId = String(updated._id || updated.id);
+          return pId === uId ? updated : p;
         }));
 
-        if (setProjects && projects) {
-          setProjects(projects.map((p) => {
-            if (updated._id && p._id === updated._id) return updated;
-            if (updated.id && p.id === updated.id) return updated;
-            return p;
+        if (setProjects) {
+          setProjects((prev) => prev.map((p) => {
+            const pId = String(p._id || p.id);
+            const uId = String(updated._id || updated.id);
+            return pId === uId ? updated : p;
           }));
         }
 
         setEditingProject(null);
-        if (viewingProject && (viewingProject._id === updated._id || viewingProject.id === updated.id)) {
+        if (viewingProject && String(viewingProject._id || viewingProject.id) === String(updated._id || updated.id)) {
           setViewingProject(updated);
         }
         showToast("Project updated successfully", "success");

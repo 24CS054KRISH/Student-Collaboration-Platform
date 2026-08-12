@@ -7,7 +7,7 @@ export default function ProjectEditModal({ project, onClose, onSave }) {
     category: project.category || "General",
     tags: (project.requiredSkills || project.tags || []).join(", "),
     status: project.status || "Planning",
-    progress: project.progress || 0,
+    progress: project.progress !== undefined ? project.progress : 0,
     teamSize: project.teamSize || 1,
   });
 
@@ -20,14 +20,17 @@ export default function ProjectEditModal({ project, onClose, onSave }) {
       ? form.tags.split(",").map((t) => t.trim()).filter((t) => t.length > 0)
       : [];
 
+    const parsedProgress = isNaN(parseInt(form.progress, 10)) ? 0 : parseInt(form.progress, 10);
+    const clampedProgress = Math.min(100, Math.max(0, parsedProgress));
+
     onSave({
       title: form.title,
       description: form.description,
       category: form.category,
       requiredSkills,
       status: form.status,
-      progress: parseInt(form.progress) || 0,
-      teamSize: parseInt(form.teamSize) || 1,
+      progress: clampedProgress,
+      teamSize: parseInt(form.teamSize, 10) || 1,
     });
   };
 

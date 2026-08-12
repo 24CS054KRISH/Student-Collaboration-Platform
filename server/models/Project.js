@@ -36,6 +36,12 @@ const projectSchema = new mongoose.Schema({
         type: String,
         default: 'Open'
     },
+    progress: {
+        type: Number,
+        default: 0,
+        min: 0,
+        max: 100
+    },
     createdAt: {
         type: Date,
         default: Date.now
