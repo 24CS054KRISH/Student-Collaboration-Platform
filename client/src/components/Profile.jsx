@@ -1,12 +1,55 @@
-import { useState } from "react";
-import { updateProfile } from "../api/authApi";
+import { useState, useRef } from "react";
+import { updateProfile, uploadAvatar } from "../api/authApi";
 import { useToast } from "./Toast";
 
 export default function Profile({ userProfile, setUserProfile, projects }) {
   const [showEditModal, setShowEditModal] = useState(false);
   const [newSkillInput, setNewSkillInput] = useState("");
   const [saving, setSaving] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const photoInputRef = useRef(null);
   const showToast = useToast();
+
+  // Handle profile photo upload
+  const handlePhotoUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate type
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      showToast('Only JPG, PNG, or WEBP images are allowed.', 'error');
+      return;
+    }
+    // Validate size (3 MB)
+    if (file.size > 3 * 1024 * 1024) {
+      showToast('Image must be smaller than 3 MB.', 'error');
+      return;
+    }
+
+    setUploadingPhoto(true);
+    try {
+      const response = await uploadAvatar(file);
+      if (response.success && response.user) {
+        const u = response.user;
+        const newAvatarUrl = u.avatar;
+        // Persist to localStorage
+        const stored = JSON.parse(localStorage.getItem('user') || '{}');
+        stored.avatar = newAvatarUrl;
+        localStorage.setItem('user', JSON.stringify(stored));
+        // Update parent state immediately (no page refresh needed)
+        setUserProfile((prev) => ({ ...prev, avatarUrl: newAvatarUrl }));
+        showToast('Profile photo updated!', 'success');
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      showToast(err.response?.data?.message || 'Failed to upload photo.', 'error');
+    } finally {
+      setUploadingPhoto(false);
+      // Reset file input
+      if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
   
   // Edit Form state
   const [editForm, setEditForm] = useState({
@@ -189,6 +232,34 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
               src={userProfile.avatarUrl}
               alt={userProfile.name}
               className="w-28 h-28 md:w-32 md:h-32 rounded-2xl object-cover border-4 border-white shadow-md bg-white"
+            />
+            {/* Camera overlay button */}
+            <button
+              type="button"
+              onClick={() => photoInputRef.current?.click()}
+              disabled={uploadingPhoto}
+              title={uploadingPhoto ? 'Uploading…' : 'Change profile photo'}
+              className="absolute bottom-1.5 right-1.5 w-8 h-8 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl shadow-md flex items-center justify-center transition-colors cursor-pointer"
+            >
+              {uploadingPhoto ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              )}
+            </button>
+            {/* Hidden file input */}
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/jpeg,image/jpg,image/png,image/webp"
+              className="hidden"
+              onChange={handlePhotoUpload}
             />
           </div>
 

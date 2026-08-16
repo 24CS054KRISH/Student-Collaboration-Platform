@@ -22,8 +22,8 @@ router.get('/conversations', authMiddleware, async (req, res) => {
             status: 'accepted',
             $or: [{ sender: userId }, { receiver: userId }]
         })
-            .populate('sender', 'fullName email college branch year avatar')
-            .populate('receiver', 'fullName email college branch year avatar');
+            .populate('sender', '-password')
+            .populate('receiver', '-password');
 
         const directMap = new Map();
         acceptedRequests.forEach(reqDoc => {
@@ -35,9 +35,18 @@ router.get('/conversations', authMiddleware, async (req, res) => {
                 directMap.set(peer._id.toString(), {
                     _id: peer._id,
                     name: name,
+                    fullName: name,
                     email: peer.email || "",
+                    college: peer.college || "",
                     branch: peer.branch || "Student",
                     year: peer.year || "",
+                    bio: peer.bio || "",
+                    skills: peer.skills || [],
+                    achievements: peer.achievements || [],
+                    interests: peer.interests || [],
+                    github: peer.github || "",
+                    linkedin: peer.linkedin || "",
+                    portfolio: peer.portfolio || "",
                     avatar: peer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`
                 });
             }

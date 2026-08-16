@@ -150,6 +150,30 @@ router.get('/users', async (req, res) => {
     }
 });
 
+// GET /users/:id - Fetch single user profile by ID
+router.get('/users/:id', async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id, '-password');
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User not found"
+            });
+        }
+        return res.status(200).json({
+            success: true,
+            user
+        });
+    } catch (error) {
+        console.error("Error fetching user profile:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error fetching user profile"
+        });
+    }
+});
+
+
 // PUT /profile - Update current user profile
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
@@ -203,6 +227,62 @@ router.put('/profile', authMiddleware, async (req, res) => {
             success: false,
             message: "Server error during profile update"
         });
+    }
+});
+
+// POST /avatar - Upload profile photo to Cloudinary
+const { avatarUpload, uploadToCloudinary } = require('../config/cloudinary');
+
+router.post('/avatar', authMiddleware, (req, res, next) => {
+    avatarUpload.single('avatar')(req, res, (multerErr) => {
+        if (multerErr) {
+            // multer validation errors (file size, wrong type)
+            return res.status(400).json({
+                success: false,
+                message: multerErr.message || 'File validation failed'
+            });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+
+        // Stream the in-memory buffer to Cloudinary
+        let avatarUrl;
+        try {
+            avatarUrl = await uploadToCloudinary(req.file.buffer, req.file.mimetype);
+        } catch (cloudErr) {
+            const errMsg = cloudErr instanceof Error
+                ? cloudErr.message
+                : (typeof cloudErr === 'string' ? cloudErr : JSON.stringify(cloudErr));
+            console.error('[Avatar Route] Cloudinary upload failed:', errMsg);
+            return res.status(502).json({
+                success: false,
+                message: `Image upload to Cloudinary failed: ${errMsg || 'unknown error'}`
+            });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.user,
+            { avatar: avatarUrl },
+            { new: true, select: '-password' }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Profile photo updated successfully',
+            user
+        });
+    } catch (error) {
+        console.error('Error in avatar upload route:', error);
+        return res.status(500).json({ success: false, message: 'Server error during photo upload' });
     }
 });
 

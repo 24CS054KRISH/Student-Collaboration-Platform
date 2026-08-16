@@ -67,3 +67,35 @@ export const updateProfile = async (profileData) => {
         throw error;
     }
 };
+
+/**
+ * Fetch single user profile by ID.
+ * @param {string} userId - User ID to fetch
+ * @returns {Promise<Object>} The API response data containing user object
+ */
+export const getUserById = async (userId) => {
+    try {
+        const response = await API.get(`/auth/users/${userId}`);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Upload / change current user's profile photo.
+ * @param {File} file - Image file selected by the user
+ * @returns {Promise<Object>} API response with updated user
+ */
+export const uploadAvatar = async (file) => {
+    const formData = new FormData();
+    formData.append('avatar', file);
+    try {
+        // Do NOT set Content-Type manually — axios + browser auto-generates
+        // the correct multipart/form-data boundary, which multer requires.
+        const response = await API.post('/auth/avatar', formData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

@@ -15,6 +15,13 @@ API.interceptors.request.use(
         if (token) {
             config.headers.Authorization = `Bearer ${token}`;
         }
+        // When sending FormData, remove the instance-level Content-Type so that
+        // the browser can set the correct multipart/form-data boundary automatically.
+        // Without this, the axios instance's 'application/json' default overrides
+        // the boundary, and multer on the server cannot parse the file.
+        if (config.data instanceof FormData) {
+            delete config.headers['Content-Type'];
+        }
         return config;
     },
     (error) => {

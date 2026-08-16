@@ -180,12 +180,16 @@ export default function Messages({ initialPeer, onSelectPeer }) {
             ].filter(Boolean).join(" • ") || "Student";
             const avatar = initialPeer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
 
+            const foundDirect = direct.find((d) => String(d._id) === String(peerId));
+            const fullPeer = foundDirect || initialPeer;
+
             setActiveChannel({
               type: "direct",
               id: peerId,
               name: name,
               subtitle: branchYear,
-              avatar: avatar
+              avatar: avatar,
+              peerObj: fullPeer
             });
           } else if (team.length > 0) {
             const firstTeam = team[0];
@@ -198,12 +202,19 @@ export default function Messages({ initialPeer, onSelectPeer }) {
             });
           } else if (direct.length > 0) {
             const firstDirect = direct[0];
+            const name = firstDirect.name || firstDirect.fullName || "Student";
+            const branchYear = [
+              firstDirect.branch || firstDirect.department,
+              firstDirect.year ? `${firstDirect.year} Year` : null
+            ].filter(Boolean).join(" • ") || "Student";
+
             setActiveChannel({
               type: "direct",
               id: firstDirect._id,
-              name: firstDirect.name,
-              subtitle: `${firstDirect.branch} • ${firstDirect.year ? firstDirect.year + ' Year' : ''}`,
-              avatar: firstDirect.avatar
+              name: name,
+              subtitle: branchYear,
+              avatar: firstDirect.avatar,
+              peerObj: firstDirect
             });
           }
         }
@@ -554,12 +565,19 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                       <button
                         key={peer._id}
                         onClick={() => {
+                          const name = peer.name || peer.fullName || "Student";
+                          const branchYear = [
+                            peer.branch || peer.department,
+                            peer.year ? `${peer.year} Year` : null
+                          ].filter(Boolean).join(" • ") || "Student";
+
                           setActiveChannel({
                             type: "direct",
                             id: peer._id,
-                            name: peer.name,
-                            subtitle: `${peer.branch} • ${peer.year ? peer.year + ' Year' : ''}`,
-                            avatar: peer.avatar
+                            name: name,
+                            subtitle: branchYear,
+                            avatar: peer.avatar,
+                            peerObj: peer
                           });
                           setUnreadByChannel((prev) => ({ ...prev, [channelKey]: 0 }));
                         }}
@@ -620,11 +638,13 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                 <div
                   onClick={() => {
                     if (activeChannel.type === "direct" && onSelectPeer) {
-                      onSelectPeer(activeChannel.peerObj || {
+                      const peerData = activeChannel.peerObj || conversations.directChats.find((c) => String(c._id) === String(activeChannel.id));
+                      onSelectPeer(peerData || {
                         _id: activeChannel.id,
                         fullName: activeChannel.name,
+                        name: activeChannel.name,
                         avatar: activeChannel.avatar,
-                        bio: activeChannel.subtitle
+                        branch: activeChannel.subtitle
                       });
                     }
                   }}
@@ -643,11 +663,8 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                     </div>
                   )}
                   <div className="truncate">
-                    <h2 className="text-sm md:text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition truncate flex items-center gap-1.5">
+                    <h2 className="text-sm md:text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition truncate">
                       {activeChannel.name}
-                      {activeChannel.type === "direct" && (
-                        <span className="text-[10px] text-blue-600 font-normal">View Profile →</span>
-                      )}
                     </h2>
                     <p className="text-[11px] font-semibold text-slate-400 truncate">
                       {activeChannel.subtitle}
