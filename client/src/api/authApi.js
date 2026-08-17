@@ -99,3 +99,16 @@ export const uploadAvatar = async (file) => {
         throw error;
     }
 };
+
+/**
+ * Remove current user's profile photo from Cloudinary & database.
+ * @returns {Promise<Object>} API response with updated user
+ */
+export const removeAvatar = async () => {
+    try {
+        const response = await API.delete('/auth/avatar');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

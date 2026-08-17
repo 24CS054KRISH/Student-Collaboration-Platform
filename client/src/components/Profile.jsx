@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { updateProfile, uploadAvatar } from "../api/authApi";
+import { updateProfile, uploadAvatar, removeAvatar } from "../api/authApi";
 import { useToast } from "./Toast";
 
 export default function Profile({ userProfile, setUserProfile, projects }) {
@@ -7,8 +7,12 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
   const [newSkillInput, setNewSkillInput] = useState("");
   const [saving, setSaving] = useState(false);
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [removingPhoto, setRemovingPhoto] = useState(false);
+  const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
   const photoInputRef = useRef(null);
   const showToast = useToast();
+
+  const hasCustomAvatar = Boolean(userProfile.avatarUrl && !userProfile.avatarUrl.includes("ui-avatars.com"));
 
   // Handle profile photo upload
   const handlePhotoUpload = async (e) => {
@@ -48,6 +52,36 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
       setUploadingPhoto(false);
       // Reset file input
       if (photoInputRef.current) photoInputRef.current.value = '';
+    }
+  };
+
+  // Handle profile photo removal
+  const handleRemovePhoto = async () => {
+    setRemovingPhoto(true);
+    try {
+      const response = await removeAvatar();
+      if (response.success) {
+        const defaultAvatarUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(userProfile.name || 'Student')}&background=0D8ABC&color=fff`;
+
+        // Persist to localStorage
+        const stored = JSON.parse(localStorage.getItem('user') || '{}');
+        stored.avatar = '';
+        localStorage.setItem('user', JSON.stringify(stored));
+
+        // Update parent state immediately (no page refresh needed)
+        setUserProfile((prev) => ({
+          ...prev,
+          avatarUrl: defaultAvatarUrl
+        }));
+
+        setShowDeletePhotoConfirm(false);
+        showToast('Profile photo removed successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('Avatar removal error:', err);
+      showToast(err.response?.data?.message || 'Failed to remove profile photo.', 'error');
+    } finally {
+      setRemovingPhoto(false);
     }
   };
   
@@ -233,26 +267,49 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
               alt={userProfile.name}
               className="w-28 h-28 md:w-32 md:h-32 rounded-2xl object-cover border-4 border-white shadow-md bg-white"
             />
-            {/* Camera overlay button */}
-            <button
-              type="button"
-              onClick={() => photoInputRef.current?.click()}
-              disabled={uploadingPhoto}
-              title={uploadingPhoto ? 'Uploading…' : 'Change profile photo'}
-              className="absolute bottom-1.5 right-1.5 w-8 h-8 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl shadow-md flex items-center justify-center transition-colors cursor-pointer"
-            >
-              {uploadingPhoto ? (
-                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-              ) : (
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
+            {/* Action buttons overlay container */}
+            <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1.5">
+              {hasCustomAvatar && (
+                <button
+                  type="button"
+                  onClick={() => setShowDeletePhotoConfirm(true)}
+                  disabled={uploadingPhoto || removingPhoto}
+                  title="Remove profile photo"
+                  className="w-8 h-8 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-xl shadow-md flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  {removingPhoto ? (
+                    <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  )}
+                </button>
               )}
-            </button>
+              {/* Camera overlay button */}
+              <button
+                type="button"
+                onClick={() => photoInputRef.current?.click()}
+                disabled={uploadingPhoto || removingPhoto}
+                title={uploadingPhoto ? 'Uploading…' : hasCustomAvatar ? 'Change profile photo' : 'Upload profile photo'}
+                className="w-8 h-8 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-xl shadow-md flex items-center justify-center transition-colors cursor-pointer"
+              >
+                {uploadingPhoto ? (
+                  <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                )}
+              </button>
+            </div>
             {/* Hidden file input */}
             <input
               ref={photoInputRef}
@@ -736,6 +793,53 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Removing Profile Photo */}
+      {showDeletePhotoConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-scaleIn">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-extrabold text-slate-900">Remove Profile Photo?</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Are you sure you want to remove your custom profile photo? Your avatar will revert to your default initials.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeletePhotoConfirm(false)}
+                disabled={removingPhoto}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRemovePhoto}
+                disabled={removingPhoto}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-red-500/20"
+              >
+                {removingPhoto ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span>Removing…</span>
+                  </>
+                ) : (
+                  <span>Remove</span>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

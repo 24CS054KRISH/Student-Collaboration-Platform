@@ -231,7 +231,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
 });
 
 // POST /avatar - Upload profile photo to Cloudinary
-const { avatarUpload, uploadToCloudinary } = require('../config/cloudinary');
+const { avatarUpload, uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 
 router.post('/avatar', authMiddleware, (req, res, next) => {
     avatarUpload.single('avatar')(req, res, (multerErr) => {
@@ -249,6 +249,10 @@ router.post('/avatar', authMiddleware, (req, res, next) => {
         if (!req.file) {
             return res.status(400).json({ success: false, message: 'No file uploaded' });
         }
+
+        // Fetch current user to check for existing Cloudinary avatar to replace
+        const currentUser = await User.findById(req.user);
+        const oldAvatar = currentUser?.avatar;
 
         // Stream the in-memory buffer to Cloudinary
         let avatarUrl;
@@ -275,6 +279,15 @@ router.post('/avatar', authMiddleware, (req, res, next) => {
             return res.status(404).json({ success: false, message: 'User not found' });
         }
 
+        // Delete old Cloudinary image in background if it exists and was replaced
+        if (oldAvatar && oldAvatar !== avatarUrl) {
+            try {
+                await deleteFromCloudinary(oldAvatar);
+            } catch (delErr) {
+                console.error('[Avatar Route] Failed to delete replaced avatar from Cloudinary:', delErr);
+            }
+        }
+
         return res.status(200).json({
             success: true,
             message: 'Profile photo updated successfully',
@@ -283,6 +296,43 @@ router.post('/avatar', authMiddleware, (req, res, next) => {
     } catch (error) {
         console.error('Error in avatar upload route:', error);
         return res.status(500).json({ success: false, message: 'Server error during photo upload' });
+    }
+});
+
+// DELETE /avatar - Remove profile photo from Cloudinary and reset MongoDB avatar
+router.delete('/avatar', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const oldAvatar = user.avatar;
+
+        // Reset avatar field in MongoDB
+        user.avatar = '';
+        await user.save();
+
+        // Delete from Cloudinary if existing image was hosted there
+        if (oldAvatar) {
+            try {
+                await deleteFromCloudinary(oldAvatar);
+            } catch (cloudErr) {
+                console.error('[Avatar Route] Failed to delete avatar from Cloudinary:', cloudErr);
+            }
+        }
+
+        const userObj = user.toObject();
+        delete userObj.password;
+
+        return res.status(200).json({
+            success: true,
+            message: 'Profile photo removed successfully',
+            user: userObj
+        });
+    } catch (error) {
+        console.error('Error removing profile photo:', error);
+        return res.status(500).json({ success: false, message: 'Server error during photo removal' });
     }
 });
 

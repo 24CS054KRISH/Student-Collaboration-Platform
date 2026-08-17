@@ -82,4 +82,93 @@ function uploadToCloudinary(buffer, mimetype) {
     });
 }
 
-module.exports = { avatarUpload, uploadToCloudinary };
+/**
+ * Extract Cloudinary public_id from a full Cloudinary secure URL.
+ * Handles nested folder paths (e.g. 'student-collab/avatars/sample').
+ * @param {string} url
+ * @returns {string|null} public_id
+ */
+function extractCloudinaryPublicId(url) {
+    if (!url || typeof url !== 'string' || !url.includes('cloudinary.com')) {
+        return null;
+    }
+    try {
+        const parts = url.split('/upload/');
+        if (parts.length < 2) return null;
+
+        let pathAfterUpload = parts[1].split('?')[0];
+        const segments = pathAfterUpload.split('/');
+        const cleanSegments = [];
+        let passedTransformsAndVersion = false;
+
+        for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            // Skip version segment like 'v1234567890'
+            if (/^v\d+$/.test(seg)) {
+                passedTransformsAndVersion = true;
+                continue;
+            }
+            // Skip transformation segments before the version/path like 'c_fill,h_400,w_400'
+            if (!passedTransformsAndVersion && (seg.includes('_') || seg.includes(','))) {
+                continue;
+            }
+            passedTransformsAndVersion = true;
+            cleanSegments.push(seg);
+        }
+
+        if (cleanSegments.length === 0) return null;
+
+        const fullPublicPath = cleanSegments.join('/');
+        const lastDotIdx = fullPublicPath.lastIndexOf('.');
+        if (lastDotIdx > 0) {
+            return fullPublicPath.substring(0, lastDotIdx);
+        }
+        return fullPublicPath;
+    } catch (err) {
+        console.error('[Cloudinary] Failed to extract public_id:', err);
+        return null;
+    }
+}
+
+/**
+ * Delete an image from Cloudinary given its URL or public ID.
+ * @param {string} urlOrPublicId
+ * @returns {Promise<Object>}
+ */
+function deleteFromCloudinary(urlOrPublicId) {
+    return new Promise((resolve) => {
+        if (!urlOrPublicId) {
+            return resolve({ result: 'not_found' });
+        }
+
+        const publicId = urlOrPublicId.includes('http')
+            ? extractCloudinaryPublicId(urlOrPublicId)
+            : urlOrPublicId;
+
+        if (!publicId) {
+            console.log('[Cloudinary] Skipping deletion: Not a valid Cloudinary public ID or URL:', urlOrPublicId);
+            return resolve({ result: 'skipped' });
+        }
+
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key:    process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+            secure:     true,
+        });
+
+        console.log('[Cloudinary] Attempting deletion of public_id:', publicId);
+
+        cloudinary.uploader.destroy(publicId, (error, result) => {
+            if (error) {
+                console.error('[Cloudinary] Destroy callback error:', error.message || error);
+                resolve({ error: error.message || error });
+            } else {
+                console.log('[Cloudinary] Destroy result:', result);
+                resolve(result);
+            }
+        });
+    });
+}
+
+module.exports = { avatarUpload, uploadToCloudinary, deleteFromCloudinary, extractCloudinaryPublicId };
