@@ -18,6 +18,12 @@ export default function Messages({ initialPeer, onSelectPeer }) {
   const [unreadByChannel, setUnreadByChannel] = useState({});
   const [lastMessageByChannel, setLastMessageByChannel] = useState({});
 
+  // Team Members Popover States
+  const [teamMembersMap, setTeamMembersMap] = useState({});
+  const [showTeamMembersDropdown, setShowTeamMembersDropdown] = useState(false);
+  const teamDropdownRef = useRef(null);
+  const teamHeaderBtnRef = useRef(null);
+
   const [messages, setMessages] = useState([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [newMessageText, setNewMessageText] = useState("");
@@ -43,7 +49,36 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
   useEffect(() => {
     activeChannelRef.current = activeChannel;
+    setShowTeamMembersDropdown(false);
   }, [activeChannel]);
+
+  // Click outside and Escape key handler for Team Members popover
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (
+        showTeamMembersDropdown &&
+        teamDropdownRef.current &&
+        !teamDropdownRef.current.contains(event.target) &&
+        teamHeaderBtnRef.current &&
+        !teamHeaderBtnRef.current.contains(event.target)
+      ) {
+        setShowTeamMembersDropdown(false);
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setShowTeamMembersDropdown(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [showTeamMembersDropdown]);
 
   // Auto-scroll to bottom of messages container
   const scrollToBottom = () => {
@@ -141,9 +176,10 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
           setConversations({ directChats: direct, teamChats: team });
 
-          // Populate initial unread counts and last message previews from backend
+          // Populate initial unread counts, last message previews, and team members from backend
           const initialUnread = {};
           const initialLastMsg = {};
+          const initialMembers = {};
 
           direct.forEach((peer) => {
             const key = `direct_${peer._id}`;
@@ -165,10 +201,14 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                 time: t.lastMessageTime
               };
             }
+            if (t.members) {
+              initialMembers[t._id] = t.members;
+            }
           });
 
           setUnreadByChannel((prev) => ({ ...initialUnread, ...prev }));
           setLastMessageByChannel((prev) => ({ ...initialLastMsg, ...prev }));
+          setTeamMembersMap((prev) => ({ ...initialMembers, ...prev }));
 
           // If initialPeer is passed from parent component (e.g. MyConnections), pre-select it!
           if (initialPeer) {
@@ -198,7 +238,8 @@ export default function Messages({ initialPeer, onSelectPeer }) {
               id: firstTeam._id,
               name: firstTeam.title,
               subtitle: `${firstTeam.category} • ${firstTeam.status || "Active"}`,
-              avatar: null
+              avatar: null,
+              members: firstTeam.members || []
             });
           } else if (direct.length > 0) {
             const firstDirect = direct[0];
@@ -253,6 +294,12 @@ export default function Messages({ initialPeer, onSelectPeer }) {
           res = await getDirectMessages(activeChannel.id);
         } else {
           res = await getProjectMessages(activeChannel.id);
+          if (res.success && res.project?.members) {
+            setTeamMembersMap((prev) => ({
+              ...prev,
+              [activeChannel.id]: res.project.members
+            }));
+          }
         }
 
         if (res.success) {
@@ -494,8 +541,10 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                             id: team._id,
                             name: team.title,
                             subtitle: `${team.category} • ${team.status || "Active"}`,
-                            avatar: null
+                            avatar: null,
+                            members: team.members || []
                           });
+                          setShowTeamMembersDropdown(false);
                           setUnreadByChannel((prev) => ({ ...prev, [channelKey]: 0 }));
                         }}
                         className={`w-full flex items-center justify-between p-2.5 rounded-xl transition-all text-left cursor-pointer ${
@@ -634,43 +683,195 @@ export default function Messages({ initialPeer, onSelectPeer }) {
           {activeChannel ? (
             <>
               {/* Active Channel Header */}
-              <div className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between bg-white shrink-0">
-                <div
-                  onClick={() => {
-                    if (activeChannel.type === "direct" && onSelectPeer) {
-                      const peerData = activeChannel.peerObj || conversations.directChats.find((c) => String(c._id) === String(activeChannel.id));
-                      onSelectPeer(peerData || {
-                        _id: activeChannel.id,
-                        fullName: activeChannel.name,
-                        name: activeChannel.name,
-                        avatar: activeChannel.avatar,
-                        branch: activeChannel.subtitle
-                      });
-                    }
-                  }}
-                  className={`flex items-center gap-3 min-w-0 ${activeChannel.type === "direct" ? "cursor-pointer group" : ""}`}
-                  title={activeChannel.type === "direct" ? "Click to view student profile" : ""}
-                >
-                  {activeChannel.type === "direct" ? (
+              <div className="px-6 py-4 border-b border-slate-200/80 flex items-center justify-between bg-white shrink-0 relative">
+                {activeChannel.type === "direct" ? (
+                  <div
+                    onClick={() => {
+                      if (onSelectPeer) {
+                        const peerData = activeChannel.peerObj || conversations.directChats.find((c) => String(c._id) === String(activeChannel.id));
+                        onSelectPeer(peerData || {
+                          _id: activeChannel.id,
+                          fullName: activeChannel.name,
+                          name: activeChannel.name,
+                          avatar: activeChannel.avatar,
+                          branch: activeChannel.subtitle
+                        });
+                      }
+                    }}
+                    className="flex items-center gap-3 min-w-0 cursor-pointer group"
+                    title="Click to view student profile"
+                  >
                     <img
                       src={activeChannel.avatar}
                       alt={activeChannel.name}
                       className="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0 group-hover:ring-2 ring-blue-500 transition"
                     />
-                  ) : (
-                    <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-extrabold text-base shrink-0">
-                      #
+                    <div className="truncate">
+                      <h2 className="text-sm md:text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition truncate">
+                        {activeChannel.name}
+                      </h2>
+                      <p className="text-[11px] font-semibold text-slate-400 truncate">
+                        {activeChannel.subtitle}
+                      </p>
                     </div>
-                  )}
-                  <div className="truncate">
-                    <h2 className="text-sm md:text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition truncate">
-                      {activeChannel.name}
-                    </h2>
-                    <p className="text-[11px] font-semibold text-slate-400 truncate">
-                      {activeChannel.subtitle}
-                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="relative min-w-0">
+                    <button
+                      ref={teamHeaderBtnRef}
+                      type="button"
+                      onClick={() => setShowTeamMembersDropdown((prev) => !prev)}
+                      className="flex items-center gap-3 min-w-0 text-left hover:opacity-95 transition cursor-pointer group focus:outline-none"
+                      title="Click to view project team members"
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center font-extrabold text-base shrink-0 group-hover:bg-blue-100 group-hover:text-blue-700 transition shadow-sm">
+                        #
+                      </div>
+                      <div className="truncate">
+                        <div className="flex items-center gap-1.5">
+                          <h2 className="text-sm md:text-base font-extrabold text-slate-900 group-hover:text-blue-600 transition truncate">
+                            {activeChannel.name}
+                          </h2>
+                          <svg
+                            className={`w-4 h-4 text-slate-400 group-hover:text-blue-600 transition-transform duration-200 shrink-0 ${
+                              showTeamMembersDropdown ? "rotate-180 text-blue-600" : ""
+                            }`}
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </div>
+                        <p className="text-[11px] font-semibold text-slate-400 truncate flex items-center gap-1.5 mt-0.5">
+                          <span>{activeChannel.subtitle}</span>
+                          <span className="text-slate-300">•</span>
+                          <span className="text-blue-600 font-bold group-hover:underline">
+                            {(teamMembersMap[activeChannel.id] || activeChannel.members || []).length}{" "}
+                            {(teamMembersMap[activeChannel.id] || activeChannel.members || []).length === 1 ? "member" : "members"}
+                          </span>
+                        </p>
+                      </div>
+                    </button>
+
+                    {/* Team Members Dropdown Popover */}
+                    {showTeamMembersDropdown && (
+                      <div
+                        ref={teamDropdownRef}
+                        className="absolute top-full left-0 mt-2.5 z-50 w-80 sm:w-96 max-w-[calc(100vw-3rem)] bg-white rounded-2xl shadow-2xl border border-slate-200/90 p-4 animate-scaleIn origin-top-left"
+                      >
+                        {/* Popover Header */}
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs">
+                              👥
+                            </div>
+                            <div>
+                              <h3 className="text-xs font-extrabold text-slate-900 leading-tight">
+                                Project Team Members
+                              </h3>
+                              <p className="text-[10px] font-semibold text-slate-400">
+                                {(teamMembersMap[activeChannel.id] || activeChannel.members || []).length}{" "}
+                                {(teamMembersMap[activeChannel.id] || activeChannel.members || []).length === 1 ? "member" : "members"} enrolled
+                              </p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setShowTeamMembersDropdown(false)}
+                            className="text-slate-400 hover:text-slate-600 p-1 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                            title="Close"
+                          >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                          </button>
+                        </div>
+
+                        {/* Members List */}
+                        <div className="max-h-64 overflow-y-auto space-y-1.5 pr-1 scrollbar-thin">
+                          {!(teamMembersMap[activeChannel.id] || activeChannel.members) || (teamMembersMap[activeChannel.id] || activeChannel.members).length === 0 ? (
+                            <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                              No team members found
+                            </div>
+                          ) : (
+                            (teamMembersMap[activeChannel.id] || activeChannel.members).map((member, idx) => {
+                              const memName = member.fullName || member.name || "Student";
+                              const memAvatar =
+                                member.avatar ||
+                                member.avatarUrl ||
+                                `https://ui-avatars.com/api/?name=${encodeURIComponent(memName)}&background=0D8ABC&color=fff`;
+                              const isLead = member.isOwner || member.role === "Lead Developer";
+                              const academicInfo = [
+                                member.branch || member.department,
+                                member.year ? (String(member.year).toLowerCase().includes("year") ? member.year : `${member.year} Year`) : null,
+                                member.college
+                              ]
+                                .filter(Boolean)
+                                .join(" • ");
+
+                              return (
+                                <div
+                                  key={member._id || idx}
+                                  onClick={() => {
+                                    if (onSelectPeer) {
+                                      onSelectPeer(member);
+                                      setShowTeamMembersDropdown(false);
+                                    }
+                                  }}
+                                  className="flex items-center gap-3 p-2 hover:bg-slate-50 border border-transparent hover:border-slate-200/80 rounded-xl transition cursor-pointer group"
+                                  title={onSelectPeer ? "Click to view full profile" : ""}
+                                >
+                                  <div className="relative shrink-0">
+                                    <img
+                                      src={memAvatar}
+                                      alt={memName}
+                                      className="w-9 h-9 rounded-full object-cover border border-slate-200"
+                                    />
+                                    {isLead && (
+                                      <span
+                                        className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-amber-500 rounded-full ring-2 ring-white flex items-center justify-center text-[8px] text-white font-black"
+                                        title="Project Lead"
+                                      >
+                                        ★
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-1.5">
+                                      <p className="text-xs font-bold text-slate-800 group-hover:text-blue-600 transition truncate">
+                                        {memName}
+                                      </p>
+                                      {isLead ? (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-extrabold bg-amber-50 text-amber-700 border border-amber-200/80 shrink-0">
+                                          Lead
+                                        </span>
+                                      ) : (
+                                        <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-blue-50 text-blue-600 border border-blue-100 shrink-0">
+                                          Member
+                                        </span>
+                                      )}
+                                    </div>
+                                    <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
+                                      {academicInfo || member.email || "Student"}
+                                    </p>
+                                  </div>
+
+                                  {onSelectPeer && (
+                                    <span className="text-[10px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition shrink-0 pl-1">
+                                      Profile →
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 <div className="flex items-center gap-2 shrink-0">
                   <button

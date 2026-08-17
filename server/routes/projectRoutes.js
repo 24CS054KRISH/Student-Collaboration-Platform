@@ -6,63 +6,7 @@ const ActivityLog = require('../models/ActivityLog');
 const authMiddleware = require('../middleware/authMiddleware');
 const { sendProjectJoinEmail } = require('../services/emailService');
 
-// Helper to attach real team members from accepted applications
-const attachMembersToProjects = async (projects) => {
-    return await Promise.all(
-        projects.map(async (projectDoc) => {
-            const project = projectDoc.toObject ? projectDoc.toObject() : projectDoc;
-
-            const acceptedApps = await ProjectApplication.find({
-                project: project._id,
-                status: 'accepted'
-            }).populate('applicant', 'fullName email college branch year skills bio github linkedin portfolio avatar');
-
-            const members = [];
-
-            if (project.createdBy) {
-                const ownerObj = typeof project.createdBy === 'object' ? project.createdBy : {};
-                const ownerName = ownerObj.fullName || 'Project Lead';
-                members.push({
-                    _id: ownerObj._id || project.createdBy,
-                    fullName: ownerName,
-                    email: ownerObj.email || '',
-                    college: ownerObj.college || '',
-                    branch: ownerObj.branch || '',
-                    year: ownerObj.year || '',
-                    skills: ownerObj.skills || [],
-                    bio: ownerObj.bio || '',
-                    role: 'Lead Developer',
-                    isOwner: true,
-                    avatar: ownerObj.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(ownerName)}&background=0D8ABC&color=fff`
-                });
-            }
-
-            acceptedApps.forEach((app) => {
-                if (app.applicant) {
-                    const appUser = app.applicant;
-                    const name = appUser.fullName || 'Team Member';
-                    members.push({
-                        _id: appUser._id,
-                        fullName: name,
-                        email: appUser.email || '',
-                        college: appUser.college || '',
-                        branch: appUser.branch || '',
-                        year: appUser.year || '',
-                        skills: appUser.skills || [],
-                        bio: appUser.bio || '',
-                        role: 'Contributor',
-                        isOwner: false,
-                        avatar: appUser.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`
-                    });
-                }
-            });
-
-            project.members = members;
-            project.teamAvatars = members.map((m) => m.avatar);
-            return project;
-        })
-    );
-};
+const { attachMembersToProjects } = require('../utils/projectHelpers');
 
 // POST /create
 router.post('/create', authMiddleware, async (req, res) => {

@@ -6,6 +6,7 @@ const ProjectApplication = require('../models/ProjectApplication');
 const ConnectionRequest = require('../models/ConnectionRequest');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
+const { attachMembersToProjects } = require('../utils/projectHelpers');
 
 /**
  * GET /api/messages/conversations
@@ -54,34 +55,50 @@ router.get('/conversations', authMiddleware, async (req, res) => {
         const directChats = Array.from(directMap.values());
 
         // 2. Fetch Project Team Channels
-        const ownedProjects = await Project.find({ createdBy: userId }).select('title category status createdBy');
+        const ownedProjects = await Project.find({ createdBy: userId })
+            .populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio avatar');
 
         const acceptedApps = await ProjectApplication.find({
             applicant: userId,
             status: 'accepted'
-        }).populate('project', 'title category status createdBy');
+        }).populate({
+            path: 'project',
+            populate: {
+                path: 'createdBy',
+                select: 'fullName email college branch year skills bio github linkedin portfolio avatar'
+            }
+        });
 
-        const teamMap = new Map();
+        const allProjectDocs = [];
+        const seenProjIds = new Set();
+
         ownedProjects.forEach(p => {
+            if (p && p._id && !seenProjIds.has(p._id.toString())) {
+                seenProjIds.add(p._id.toString());
+                allProjectDocs.push(p);
+            }
+        });
+
+        acceptedApps.forEach(app => {
+            if (app.project && app.project._id && !seenProjIds.has(app.project._id.toString())) {
+                seenProjIds.add(app.project._id.toString());
+                allProjectDocs.push(app.project);
+            }
+        });
+
+        const projectsWithMembers = await attachMembersToProjects(allProjectDocs);
+        const teamMap = new Map();
+        projectsWithMembers.forEach(p => {
+            const ownerId = p.createdBy?._id ? p.createdBy._id.toString() : (p.createdBy ? p.createdBy.toString() : '');
+            const isOwner = ownerId === userId.toString();
             teamMap.set(p._id.toString(), {
                 _id: p._id,
                 title: p.title,
                 category: p.category,
                 status: p.status,
-                isOwner: true
+                isOwner: isOwner,
+                members: p.members || []
             });
-        });
-
-        acceptedApps.forEach(app => {
-            if (app.project && !teamMap.has(app.project._id.toString())) {
-                teamMap.set(app.project._id.toString(), {
-                    _id: app.project._id,
-                    title: app.project.title,
-                    category: app.project.category,
-                    status: app.project.status,
-                    isOwner: false
-                });
-            }
         });
 
         const teamChats = Array.from(teamMap.values());
@@ -197,7 +214,8 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
         const userId = req.user;
         const { projectId } = req.params;
 
-        const project = await Project.findById(projectId);
+        const project = await Project.findById(projectId)
+            .populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio avatar');
         if (!project) {
             return res.status(404).json({
                 success: false,
@@ -205,7 +223,8 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
             });
         }
 
-        const isOwner = project.createdBy.toString() === userId.toString();
+        const ownerId = project.createdBy?._id ? project.createdBy._id.toString() : (project.createdBy ? project.createdBy.toString() : '');
+        const isOwner = ownerId === userId.toString();
         let isAcceptedMember = false;
 
         if (!isOwner) {
@@ -223,6 +242,8 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
                 message: "Unauthorized to access team chat for this project"
             });
         }
+
+        const [projectWithMembers] = await attachMembersToProjects([project]);
 
         // Mark incoming team messages as read by current user
         await Message.updateMany(
@@ -245,6 +266,14 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
 
         return res.status(200).json({
             success: true,
+            project: {
+                _id: project._id,
+                title: project.title,
+                category: project.category,
+                status: project.status,
+                isOwner: isOwner,
+                members: projectWithMembers?.members || []
+            },
             messages
         });
     } catch (error) {
