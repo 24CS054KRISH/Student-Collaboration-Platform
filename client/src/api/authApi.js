@@ -112,3 +112,32 @@ export const removeAvatar = async () => {
         throw error;
     }
 };
+
+/**
+ * Upload / change current user's cover photo.
+ * @param {File} file - Image file selected by the user
+ * @returns {Promise<Object>} API response with updated user
+ */
+export const uploadCoverImage = async (file) => {
+    const formData = new FormData();
+    formData.append('coverImage', file);
+    try {
+        const response = await API.post('/auth/cover', formData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Remove current user's cover photo from Cloudinary & database.
+ * @returns {Promise<Object>} API response with updated user
+ */
+export const removeCoverImage = async () => {
+    try {
+        const response = await API.delete('/auth/cover');
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

@@ -177,7 +177,7 @@ router.get('/users/:id', async (req, res) => {
 // PUT /profile - Update current user profile
 router.put('/profile', authMiddleware, async (req, res) => {
     try {
-        const { fullName, college, branch, year, bio, github, linkedin, portfolio, skills, achievements, interests } = req.body;
+        const { fullName, college, branch, year, bio, github, linkedin, portfolio, skills, achievements, interests, coverImage } = req.body;
 
         const user = await User.findById(req.user);
         if (!user) {
@@ -195,6 +195,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
         if (github !== undefined) user.github = github;
         if (linkedin !== undefined) user.linkedin = linkedin;
         if (portfolio !== undefined) user.portfolio = portfolio;
+        if (coverImage !== undefined) user.coverImage = coverImage;
         if (skills !== undefined) {
             user.skills = Array.isArray(skills)
                 ? skills
@@ -231,7 +232,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
 });
 
 // POST /avatar - Upload profile photo to Cloudinary
-const { avatarUpload, uploadToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
+const { avatarUpload, coverUpload, uploadToCloudinary, uploadCoverToCloudinary, deleteFromCloudinary } = require('../config/cloudinary');
 
 router.post('/avatar', authMiddleware, (req, res, next) => {
     avatarUpload.single('avatar')(req, res, (multerErr) => {
@@ -333,6 +334,109 @@ router.delete('/avatar', authMiddleware, async (req, res) => {
     } catch (error) {
         console.error('Error removing profile photo:', error);
         return res.status(500).json({ success: false, message: 'Server error during photo removal' });
+    }
+});
+
+// POST /cover - Upload cover/banner photo to Cloudinary
+router.post('/cover', authMiddleware, (req, res, next) => {
+    coverUpload.single('coverImage')(req, res, (multerErr) => {
+        if (multerErr) {
+            return res.status(400).json({
+                success: false,
+                message: multerErr.message || 'File validation failed'
+            });
+        }
+        next();
+    });
+}, async (req, res) => {
+    try {
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: 'No file uploaded' });
+        }
+
+        // Fetch current user to check for existing Cloudinary cover to replace
+        const currentUser = await User.findById(req.user);
+        const oldCover = currentUser?.coverImage;
+
+        // Stream the in-memory buffer to Cloudinary
+        let coverUrl;
+        try {
+            coverUrl = await uploadCoverToCloudinary(req.file.buffer, req.file.mimetype);
+        } catch (cloudErr) {
+            const errMsg = cloudErr instanceof Error
+                ? cloudErr.message
+                : (typeof cloudErr === 'string' ? cloudErr : JSON.stringify(cloudErr));
+            console.error('[Cover Route] Cloudinary upload failed:', errMsg);
+            return res.status(502).json({
+                success: false,
+                message: `Image upload to Cloudinary failed: ${errMsg || 'unknown error'}`
+            });
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.user,
+            { coverImage: coverUrl },
+            { new: true, select: '-password' }
+        );
+
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        // Delete old Cloudinary cover image in background if it exists and was replaced
+        if (oldCover && oldCover !== coverUrl) {
+            try {
+                await deleteFromCloudinary(oldCover);
+            } catch (delErr) {
+                console.error('[Cover Route] Failed to delete replaced cover from Cloudinary:', delErr);
+            }
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cover photo updated successfully',
+            user
+        });
+    } catch (error) {
+        console.error('Error in cover upload route:', error);
+        return res.status(500).json({ success: false, message: 'Server error during cover photo upload' });
+    }
+});
+
+// DELETE /cover - Remove cover photo from Cloudinary and reset MongoDB coverImage
+router.delete('/cover', authMiddleware, async (req, res) => {
+    try {
+        const user = await User.findById(req.user);
+        if (!user) {
+            return res.status(404).json({ success: false, message: 'User not found' });
+        }
+
+        const oldCover = user.coverImage;
+
+        // Reset coverImage field in MongoDB
+        user.coverImage = '';
+        await user.save();
+
+        // Delete from Cloudinary if existing cover was hosted there
+        if (oldCover) {
+            try {
+                await deleteFromCloudinary(oldCover);
+            } catch (cloudErr) {
+                console.error('[Cover Route] Failed to delete cover from Cloudinary:', cloudErr);
+            }
+        }
+
+        const userObj = user.toObject();
+        delete userObj.password;
+
+        return res.status(200).json({
+            success: true,
+            message: 'Cover photo removed successfully',
+            user: userObj
+        });
+    } catch (error) {
+        console.error('Error removing cover photo:', error);
+        return res.status(500).json({ success: false, message: 'Server error during cover photo removal' });
     }
 });
 

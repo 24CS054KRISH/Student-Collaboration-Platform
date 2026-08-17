@@ -19,6 +19,19 @@ const avatarUpload = multer({
     }
 });
 
+const coverUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB for banner covers
+    fileFilter: (_req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+        if (allowed.includes(file.mimetype)) {
+            cb(null, true);
+        } else {
+            cb(new Error('Only JPG, PNG, and WEBP images are allowed'));
+        }
+    }
+});
+
 /**
  * Upload a buffer to Cloudinary and return the secure URL.
  * Cloudinary is configured lazily here so env vars are always loaded first.
@@ -171,4 +184,71 @@ function deleteFromCloudinary(urlOrPublicId) {
     });
 }
 
-module.exports = { avatarUpload, uploadToCloudinary, deleteFromCloudinary, extractCloudinaryPublicId };
+/**
+ * Upload a cover/banner buffer to Cloudinary and return the secure URL.
+ * Transforms image for landscape banners with quality auto.
+ * @param {Buffer} buffer
+ * @param {string} mimetype
+ * @returns {Promise<string>} secure_url
+ */
+function uploadCoverToCloudinary(buffer, mimetype) {
+    return new Promise((resolve, reject) => {
+        if (!buffer || buffer.length === 0) {
+            return reject(new Error('File buffer is empty — multer did not read the file'));
+        }
+
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key:    process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+            secure:     true,
+        });
+
+        console.log('[Cloudinary] Config at cover upload time -> cloud_name:', cloudinary.config().cloud_name, '| api_key:', cloudinary.config().api_key || 'MISSING');
+
+        try {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                    folder: 'student-collab/covers',
+                    resource_type: 'image',
+                    transformation: [
+                        { width: 1400, height: 450, crop: 'fill', gravity: 'auto', quality: 'auto', fetch_format: 'auto' }
+                    ],
+                },
+                (error, result) => {
+                    if (error) {
+                        const msg = error.message
+                            || (typeof error === 'string' ? error : null)
+                            || JSON.stringify(error);
+                        console.error('[Cloudinary] Cover callback error:', msg, '| http_code:', error.http_code);
+                        reject(new Error(msg || 'Cloudinary cover upload failed'));
+                    } else if (result && result.secure_url) {
+                        console.log('[Cloudinary] Cover upload success:', result.secure_url);
+                        resolve(result.secure_url);
+                    } else {
+                        reject(new Error('Cloudinary returned no secure_url in result'));
+                    }
+                }
+            );
+
+            uploadStream.on('error', (streamErr) => {
+                console.error('[Cloudinary] Cover stream error:', streamErr.message || streamErr);
+                reject(streamErr instanceof Error ? streamErr : new Error(String(streamErr)));
+            });
+
+            uploadStream.end(buffer);
+        } catch (syncErr) {
+            console.error('[Cloudinary] Cover sync error:', syncErr.message || syncErr);
+            reject(syncErr instanceof Error ? syncErr : new Error(String(syncErr)));
+        }
+    });
+}
+
+module.exports = {
+    avatarUpload,
+    coverUpload,
+    uploadToCloudinary,
+    uploadCoverToCloudinary,
+    deleteFromCloudinary,
+    extractCloudinaryPublicId
+};

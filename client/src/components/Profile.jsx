@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { updateProfile, uploadAvatar, removeAvatar } from "../api/authApi";
+import { updateProfile, uploadAvatar, removeAvatar, uploadCoverImage, removeCoverImage } from "../api/authApi";
 import { useToast } from "./Toast";
 
 export default function Profile({ userProfile, setUserProfile, projects }) {
@@ -10,9 +10,84 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
   const [removingPhoto, setRemovingPhoto] = useState(false);
   const [showDeletePhotoConfirm, setShowDeletePhotoConfirm] = useState(false);
   const photoInputRef = useRef(null);
+
+  // Cover photo state
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [removingCover, setRemovingCover] = useState(false);
+  const [showDeleteCoverConfirm, setShowDeleteCoverConfirm] = useState(false);
+  const coverInputRef = useRef(null);
+
   const showToast = useToast();
 
   const hasCustomAvatar = Boolean(userProfile.avatarUrl && !userProfile.avatarUrl.includes("ui-avatars.com"));
+  const hasCustomCover = Boolean(userProfile.coverImage && userProfile.coverImage.trim() !== "");
+
+  // Handle cover photo upload
+  const handleCoverUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate type
+    const allowed = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      showToast('Only JPG, PNG, or WEBP images are allowed for cover.', 'error');
+      return;
+    }
+    // Validate size (5 MB)
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('Cover image must be smaller than 5 MB.', 'error');
+      return;
+    }
+
+    setUploadingCover(true);
+    try {
+      const response = await uploadCoverImage(file);
+      if (response.success && response.user) {
+        const newCoverUrl = response.user.coverImage;
+        // Persist to localStorage
+        const stored = JSON.parse(localStorage.getItem('user') || '{}');
+        stored.coverImage = newCoverUrl;
+        localStorage.setItem('user', JSON.stringify(stored));
+        // Update parent state immediately
+        setUserProfile((prev) => ({ ...prev, coverImage: newCoverUrl }));
+        showToast('Cover photo updated successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('Cover upload error:', err);
+      showToast(err.response?.data?.message || 'Failed to upload cover photo.', 'error');
+    } finally {
+      setUploadingCover(false);
+      if (coverInputRef.current) coverInputRef.current.value = '';
+    }
+  };
+
+  // Handle cover photo removal
+  const handleRemoveCover = async () => {
+    setRemovingCover(true);
+    try {
+      const response = await removeCoverImage();
+      if (response.success) {
+        // Persist to localStorage
+        const stored = JSON.parse(localStorage.getItem('user') || '{}');
+        stored.coverImage = '';
+        localStorage.setItem('user', JSON.stringify(stored));
+
+        // Update parent state immediately
+        setUserProfile((prev) => ({
+          ...prev,
+          coverImage: ''
+        }));
+
+        setShowDeleteCoverConfirm(false);
+        showToast('Cover photo removed successfully!', 'success');
+      }
+    } catch (err) {
+      console.error('Cover removal error:', err);
+      showToast(err.response?.data?.message || 'Failed to remove cover photo.', 'error');
+    } finally {
+      setRemovingCover(false);
+    }
+  };
 
   // Handle profile photo upload
   const handlePhotoUpload = async (e) => {
@@ -252,10 +327,101 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
       {/* TOP SECTION: BANNER & OVERVIEW */}
       {/* ============================================== */}
       <div className="bg-white border border-slate-200/60 rounded-2xl shadow-sm overflow-hidden relative">
-        {/* Decorative Banner Background */}
-        <div className="h-32 md:h-44 bg-gradient-to-r from-blue-600 to-indigo-600 relative">
-          <div className="absolute top-0 right-0 w-48 h-48 bg-white/5 rounded-full blur-xl -translate-y-6 translate-x-6" />
-          <div className="absolute bottom-0 left-1/4 w-28 h-28 bg-white/5 rounded-full blur-lg translate-y-6" />
+        {/* LinkedIn-Style Professional Cover Banner */}
+        <div className="h-36 sm:h-48 md:h-56 w-full relative overflow-hidden bg-slate-900 group">
+          {hasCustomCover ? (
+            <img
+              src={userProfile.coverImage}
+              alt={`${userProfile.name}'s Cover`}
+              className="w-full h-full object-cover select-none"
+            />
+          ) : (
+            /* Clean Modern LinkedIn-Style Default Background */
+            <div className="w-full h-full bg-slate-900 relative flex items-center justify-center overflow-hidden select-none">
+              {/* Subtle executive gradient backdrop */}
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900" />
+              {/* Professional geometric grid pattern */}
+              <div
+                className="absolute inset-0 opacity-15"
+                style={{
+                  backgroundImage: `radial-gradient(#94a3b8 1px, transparent 1px), radial-gradient(#94a3b8 1px, #0f172a 1px)`,
+                  backgroundSize: '24px 24px',
+                  backgroundPosition: '0 0, 12px 12px'
+                }}
+              />
+              {/* Subtle ambient lights */}
+              <div className="absolute -top-12 right-12 w-64 h-64 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -bottom-8 left-16 w-52 h-52 bg-indigo-600/10 rounded-full blur-3xl pointer-events-none" />
+              
+              {/* Clean decorative prompt badge */}
+              <div className="relative z-10 hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-slate-400 text-xs font-medium tracking-wide backdrop-blur-sm">
+                <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                </svg>
+                <span>Add a professional cover photo</span>
+              </div>
+            </div>
+          )}
+
+          {/* Cover Action Controls (LinkedIn-style camera / edit button) */}
+          <div className="absolute top-3 right-3 sm:top-4 sm:right-4 z-20 flex items-center gap-2">
+            {hasCustomCover && (
+              <button
+                type="button"
+                onClick={() => setShowDeleteCoverConfirm(true)}
+                disabled={uploadingCover || removingCover}
+                title="Remove cover photo"
+                className="h-8 sm:h-9 px-2.5 sm:px-3 bg-slate-900/70 hover:bg-red-600/90 text-white rounded-xl backdrop-blur-md border border-white/20 shadow-md flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer"
+              >
+                {removingCover ? (
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                  </svg>
+                )}
+                <span className="hidden sm:inline">Remove</span>
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => coverInputRef.current?.click()}
+              disabled={uploadingCover || removingCover}
+              title={uploadingCover ? 'Uploading cover…' : hasCustomCover ? 'Change cover photo' : 'Upload cover photo'}
+              className="h-8 sm:h-9 px-2.5 sm:px-3.5 bg-slate-900/70 hover:bg-slate-900/90 text-white rounded-xl backdrop-blur-md border border-white/20 shadow-md flex items-center gap-1.5 text-xs font-semibold transition-all cursor-pointer"
+            >
+              {uploadingCover ? (
+                <>
+                  <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  <span>Uploading…</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  <span className="hidden sm:inline">{hasCustomCover ? "Change Cover" : "Add Cover Photo"}</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Hidden File Input for Cover */}
+          <input
+            ref={coverInputRef}
+            type="file"
+            accept="image/jpeg,image/jpg,image/png,image/webp"
+            className="hidden"
+            onChange={handleCoverUpload}
+          />
         </div>
 
         {/* Profile Details Block */}
@@ -828,6 +994,53 @@ export default function Profile({ userProfile, setUserProfile, projects }) {
                 className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-red-500/20"
               >
                 {removingPhoto ? (
+                  <>
+                    <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    <span>Removing…</span>
+                  </>
+                ) : (
+                  <span>Remove</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Confirmation Modal for Removing Cover Photo */}
+      {showDeleteCoverConfirm && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-sm w-full shadow-2xl p-6 space-y-4 animate-scaleIn">
+            <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+              </svg>
+            </div>
+            <div className="text-center space-y-1.5">
+              <h3 className="text-base font-extrabold text-slate-900">Remove Cover Photo?</h3>
+              <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                Are you sure you want to remove your custom cover photo? Your profile will revert to the default professional background.
+              </p>
+            </div>
+            <div className="flex items-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowDeleteCoverConfirm(false)}
+                disabled={removingCover}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleRemoveCover}
+                disabled={removingCover}
+                className="flex-1 px-4 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 disabled:bg-red-400 rounded-xl transition cursor-pointer flex items-center justify-center gap-1.5 shadow-md shadow-red-500/20"
+              >
+                {removingCover ? (
                   <>
                     <svg className="w-3.5 h-3.5 animate-spin" fill="none" viewBox="0 0 24 24">
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />

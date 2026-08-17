@@ -81,12 +81,31 @@ export default function PeerProfileModal({ peer, onClose, onNavigateToChat }) {
       {/* Modal card */}
       <div className="ppm-card relative bg-white rounded-2xl w-full max-w-[520px] max-h-[88vh] shadow-2xl flex flex-col z-10 overflow-hidden">
 
-        {/* ── Gradient banner (purely decorative, holds close button) ── */}
-        <div className="relative shrink-0 h-20 bg-gradient-to-r from-blue-600 to-indigo-600 flex items-start justify-end p-3">
+        {/* ── Banner (Cover image or professional backdrop, holds close button) ── */}
+        <div className="relative shrink-0 h-24 w-full bg-slate-900 overflow-hidden flex items-start justify-end p-3">
+          {displayPeer.coverImage ? (
+            <img
+              src={displayPeer.coverImage}
+              alt={`${name}'s Cover`}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          ) : (
+            <div className="absolute inset-0 bg-slate-900">
+              <div className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900" />
+              <div
+                className="absolute inset-0 opacity-15"
+                style={{
+                  backgroundImage: `radial-gradient(#94a3b8 1px, transparent 1px), radial-gradient(#94a3b8 1px, #0f172a 1px)`,
+                  backgroundSize: '20px 20px',
+                  backgroundPosition: '0 0, 10px 10px'
+                }}
+              />
+            </div>
+          )}
           <button
             onClick={onClose}
             title="Close"
-            className="text-white/80 hover:text-white bg-black/20 hover:bg-black/40 p-1.5 rounded-full transition-colors cursor-pointer"
+            className="relative z-10 text-white/90 hover:text-white bg-slate-900/60 hover:bg-slate-900/80 backdrop-blur-md p-1.5 rounded-full border border-white/10 transition-colors cursor-pointer shadow-md"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
