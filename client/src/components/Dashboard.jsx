@@ -1134,15 +1134,26 @@ export default function Dashboard({ onNavigate }) {
         {/* User profile section at the bottom of Sidebar */}
         <div className="p-4 border-t border-slate-100">
           <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
+            <div
+              onClick={() => {
+                handleTabChange("Profile");
+                setSidebarOpen(false);
+              }}
+              className="flex items-center gap-3 w-full p-1.5 -ml-1.5 rounded-xl hover:bg-slate-50 border border-transparent hover:border-slate-200/60 transition-all duration-200 cursor-pointer group select-none"
+              title="Click to view profile"
+            >
               <img
                 src={userProfile.avatarUrl}
                 alt={userProfile.name}
-                className="w-10 h-10 rounded-full object-cover border border-slate-200"
+                className="w-10 h-10 rounded-full object-cover border border-slate-200 group-hover:border-blue-300 transition-colors shrink-0"
               />
-              <div className="overflow-hidden">
-                <p className="text-xs font-bold text-slate-800 truncate">{userProfile.name}</p>
-                <p className="text-[10px] text-slate-400 font-medium truncate">{userProfile.email}</p>
+              <div className="overflow-hidden flex-1">
+                <p className="text-xs font-bold text-slate-800 group-hover:text-blue-600 truncate transition-colors">
+                  {userProfile.name}
+                </p>
+                <p className="text-[10px] text-slate-400 font-medium truncate">
+                  {userProfile.email}
+                </p>
               </div>
             </div>
           </div>
