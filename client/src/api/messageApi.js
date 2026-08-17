@@ -111,3 +111,34 @@ export const deleteMessageForMe = async (messageId) => {
         throw error;
     }
 };
+
+/**
+ * Upload chat attachment (media image, document file, or audio voice note)
+ * @param {FormData} formData
+ * @returns {Promise<Object>} { success: true, attachmentUrl, attachmentType, attachmentName }
+ */
+export const uploadChatAttachment = async (formData) => {
+    try {
+        const response = await API.post('/messages/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Toggle emoji reaction on a message
+ * @param {string} messageId
+ * @param {string} emoji
+ * @returns {Promise<Object>} { success: true, data }
+ */
+export const addMessageReaction = async (messageId, emoji) => {
+    try {
+        const response = await API.post('/messages/reaction', { messageId, emoji });
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};

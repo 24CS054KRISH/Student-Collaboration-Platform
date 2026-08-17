@@ -27,8 +27,33 @@ const messageSchema = new mongoose.Schema({
     },
     content: {
         type: String,
-        required: true,
-        trim: true
+        required: function () {
+            return !this.attachmentUrl;
+        },
+        trim: true,
+        default: ""
+    },
+    attachmentUrl: {
+        type: String,
+        default: null
+    },
+    attachmentType: {
+        type: String,
+        enum: ['image', 'file', 'audio', null],
+        default: null
+    },
+    attachmentName: {
+        type: String,
+        default: null
+    },
+    reactions: [{
+        emoji: { type: String, required: true },
+        user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+    }],
+    replyTo: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Message',
+        default: null
     },
     readBy: [{
         type: mongoose.Schema.Types.ObjectId,

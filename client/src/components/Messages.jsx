@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { io } from "socket.io-client";
-import { getConversations, getDirectMessages, getProjectMessages, sendMessage, editMessage, deleteMessage, clearDirectChat, deleteMessageForMe } from "../api/messageApi";
+import { getConversations, getDirectMessages, getProjectMessages, sendMessage, editMessage, deleteMessage, clearDirectChat, deleteMessageForMe, uploadChatAttachment, addMessageReaction } from "../api/messageApi";
 import { useToast } from "./Toast";
 
 const SOCKET_SERVER_URL = "http://localhost:5000";
@@ -29,6 +29,28 @@ export default function Messages({ initialPeer, onSelectPeer }) {
   const [newMessageText, setNewMessageText] = useState("");
   const [sending, setSending] = useState(false);
 
+  // Online Users & Typing Indicator States
+  const [onlineUsers, setOnlineUsers] = useState(new Set());
+  const [typingUsers, setTypingUsers] = useState({}); // { [userId]: userName }
+  const typingTimeoutRef = useRef(null);
+
+  // File Attachment & Voice Note States
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedFilePreview, setSelectedFilePreview] = useState(null);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
+  const fileInputRef = useRef(null);
+
+  // Voice Note Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingDuration, setRecordingDuration] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
+
+  // Threaded Reply & Emoji Reaction States
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [emojiPickerForMsg, setEmojiPickerForMsg] = useState(null);
+
   // Message Management States
   const [editingMessageId, setEditingMessageId] = useState(null);
   const [editText, setEditText] = useState("");
@@ -46,6 +68,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
   const currentUser = JSON.parse(localStorage.getItem("user") || "{}");
   const currentUserId = currentUser._id || currentUser.id;
+  const currentUserName = currentUser.fullName || currentUser.name || "Student";
 
   useEffect(() => {
     activeChannelRef.current = activeChannel;
@@ -95,6 +118,34 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
     socketRef.current.on("connect", () => {
       console.log("Connected to Socket server:", socketRef.current.id);
+      if (currentUserId) {
+        socketRef.current.emit("user_online", currentUserId);
+        socketRef.current.emit("get_online_users");
+      }
+    });
+
+    socketRef.current.on("online_users_list", (usersList) => {
+      setOnlineUsers(new Set(usersList));
+    });
+
+    socketRef.current.on("user_status_change", ({ onlineUsers: list }) => {
+      if (list) {
+        setOnlineUsers(new Set(list));
+      }
+    });
+
+    socketRef.current.on("user_typing", ({ userId, userName }) => {
+      if (String(userId) !== String(currentUserId)) {
+        setTypingUsers((prev) => ({ ...prev, [userId]: userName }));
+      }
+    });
+
+    socketRef.current.on("user_stop_typing", ({ userId }) => {
+      setTypingUsers((prev) => {
+        const next = { ...prev };
+        delete next[userId];
+        return next;
+      });
     });
 
     socketRef.current.on("receive_message", (incomingMessage) => {
@@ -113,10 +164,14 @@ export default function Messages({ initialPeer, onSelectPeer }) {
         ? new Date(incomingMessage.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
         : "";
 
+      const previewText = incomingMessage.attachmentType
+        ? `[${incomingMessage.attachmentType.toUpperCase()}] ${incomingMessage.content || incomingMessage.attachmentName || ""}`
+        : incomingMessage.content;
+
       setLastMessageByChannel((prev) => ({
         ...prev,
         [channelKey]: {
-          content: incomingMessage.content,
+          content: previewText,
           time: timeStr
         }
       }));
@@ -152,6 +207,12 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     });
 
     socketRef.current.on("message_deleted", (updatedMessage) => {
+      setMessages((prev) =>
+        prev.map((msg) => (msg._id === updatedMessage._id ? updatedMessage : msg))
+      );
+    });
+
+    socketRef.current.on("message_reaction", (updatedMessage) => {
       setMessages((prev) =>
         prev.map((msg) => (msg._id === updatedMessage._id ? updatedMessage : msg))
       );
@@ -322,13 +383,190 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     };
   }, [activeChannel, currentUserId]);
 
-  // 4. Send Message Handler
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessageText || !newMessageText.trim() || !activeChannel) return;
+  // Helper to emit stop typing event
+  const emitStopTyping = () => {
+    if (!activeChannel || !socketRef.current) return;
+    let roomId = "";
+    if (activeChannel.type === "direct") {
+      const sortedIds = [currentUserId, activeChannel.id].sort();
+      roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+    } else {
+      roomId = `project_${activeChannel.id}`;
+    }
+    socketRef.current.emit("stop_typing", { roomId, userId: currentUserId });
+  };
+
+  // Text input change handler with typing indicator debounce
+  const handleInputChange = (e) => {
+    const val = e.target.value;
+    setNewMessageText(val);
+
+    if (!activeChannel || !socketRef.current) return;
+    let roomId = "";
+    if (activeChannel.type === "direct") {
+      const sortedIds = [currentUserId, activeChannel.id].sort();
+      roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+    } else {
+      roomId = `project_${activeChannel.id}`;
+    }
+
+    if (val.trim().length > 0) {
+      socketRef.current.emit("typing", { roomId, userId: currentUserId, userName: currentUserName });
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        emitStopTyping();
+      }, 2500);
+    } else {
+      emitStopTyping();
+    }
+  };
+
+  // File selection handler
+  const handleFileSelect = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedFile(file);
+    if (file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onloadend = () => setSelectedFilePreview(reader.result);
+      reader.readAsDataURL(file);
+    } else {
+      setSelectedFilePreview(null);
+    }
+  };
+
+  const clearSelectedFile = () => {
+    setSelectedFile(null);
+    setSelectedFilePreview(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  // Voice Note Recording Handlers
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunksRef.current = [];
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingDuration(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingDuration((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.error("Failed to start voice recording:", err);
+      showToast("Microphone access denied or unavailable", "error");
+    }
+  };
+
+  const stopVoiceRecordingAndSend = () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+
+    mediaRecorderRef.current.onstop = async () => {
+      clearInterval(recordingTimerRef.current);
+      const audioBlob = new Blob(audioChunksRef.current, { type: "audio/webm" });
+      const audioFile = new File([audioBlob], `voice_note_${Date.now()}.webm`, { type: "audio/webm" });
+
+      // Stop microphone stream tracks
+      if (mediaRecorderRef.current.stream) {
+        mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+      }
+
+      setIsRecording(false);
+      setRecordingDuration(0);
+
+      // Send voice note
+      await sendAttachmentOrMessage(audioFile, "audio");
+    };
+
+    mediaRecorderRef.current.stop();
+  };
+
+  const cancelVoiceRecording = () => {
+    if (!mediaRecorderRef.current) return;
+    clearInterval(recordingTimerRef.current);
+    if (mediaRecorderRef.current.stream) {
+      mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
+    }
+    setIsRecording(false);
+    setRecordingDuration(0);
+    audioChunksRef.current = [];
+  };
+
+  // Toggle Emoji Reaction
+  const handleToggleReaction = async (msgId, emoji) => {
+    if (!activeChannel) return;
+    let roomId = "";
+    if (activeChannel.type === "direct") {
+      const sortedIds = [currentUserId, activeChannel.id].sort();
+      roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+    } else {
+      roomId = `project_${activeChannel.id}`;
+    }
+
+    if (socketRef.current && socketRef.current.connected) {
+      socketRef.current.emit("add_reaction", { messageId: msgId, emoji, userId: currentUserId, roomId });
+    } else {
+      try {
+        const res = await addMessageReaction(msgId, emoji);
+        if (res.success && res.data) {
+          setMessages((prev) => prev.map((m) => (m._id === msgId ? res.data : m)));
+        }
+      } catch (err) {
+        console.error("Failed to add reaction:", err);
+      }
+    }
+  };
+
+  // Shared Helper to Upload & Send Message
+  const sendAttachmentOrMessage = async (fileToUpload = null, forceType = null) => {
+    if (!activeChannel) return;
+
+    let attachmentUrl = null;
+    let attachmentType = null;
+    let attachmentName = null;
+
+    const file = fileToUpload || selectedFile;
+
+    if (file) {
+      try {
+        setUploadingAttachment(true);
+        const formData = new FormData();
+        formData.append("file", file);
+        const uploadRes = await uploadChatAttachment(formData);
+        if (uploadRes.success) {
+          attachmentUrl = uploadRes.attachmentUrl;
+          attachmentType = forceType || uploadRes.attachmentType;
+          attachmentName = uploadRes.attachmentName;
+        }
+      } catch (err) {
+        console.error("Failed to upload chat file:", err);
+        showToast("Failed to upload file attachment", "error");
+        setUploadingAttachment(false);
+        return;
+      } finally {
+        setUploadingAttachment(false);
+      }
+    }
 
     const content = newMessageText.trim();
+    if (!content && !attachmentUrl) return;
+
+    emitStopTyping();
     setNewMessageText("");
+    clearSelectedFile();
+
+    const replyToId = replyingTo ? replyingTo._id : undefined;
+    setReplyingTo(null);
 
     let roomId = "";
     if (activeChannel.type === "direct") {
@@ -344,16 +582,18 @@ export default function Messages({ initialPeer, onSelectPeer }) {
       receiverId: activeChannel.type === "direct" ? activeChannel.id : undefined,
       projectId: activeChannel.type === "team" ? activeChannel.id : undefined,
       content,
+      attachmentUrl,
+      attachmentType,
+      attachmentName,
+      replyTo: replyToId,
       roomId
     };
 
     try {
       setSending(true);
-      // Emit real-time message to room via Socket.io
       if (socketRef.current && socketRef.current.connected) {
         socketRef.current.emit("send_message", payload);
       } else {
-        // Fallback to REST API if Socket is re-connecting
         const res = await sendMessage(payload);
         if (res.success && res.data) {
           setMessages((prev) => [...prev, res.data]);
@@ -365,6 +605,12 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     } finally {
       setSending(false);
     }
+  };
+
+  // 4. Send Message Handler
+  const handleSendMessage = async (e) => {
+    e.preventDefault();
+    await sendAttachmentOrMessage();
   };
 
   // 5. Message Edit Handler
@@ -893,7 +1139,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
               </div>
 
               {/* Messages Thread Container */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30 scrollbar-thin">
+              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50/30 scrollbar-thin relative">
                 {loadingMessages ? (
                   <div className="h-full flex flex-col items-center justify-center text-slate-400">
                     <svg className="animate-spin h-7 w-7 text-blue-600 mb-2" fill="none" viewBox="0 0 24 24">
@@ -911,7 +1157,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                     </div>
                     <h3 className="text-sm font-extrabold text-slate-800">No messages yet</h3>
                     <p className="text-xs text-slate-400 mt-1 max-w-xs leading-relaxed font-medium">
-                      Start the conversation by sending a greeting below. Messages are saved securely and delivered instantly.
+                      Start the conversation by sending a greeting or sharing a file below.
                     </p>
                   </div>
                 ) : (
@@ -928,10 +1174,16 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
                     const isEditingThis = editingMessageId === msg._id;
 
+                    // Group reactions by emoji
+                    const reactionCounts = {};
+                    (msg.reactions || []).forEach((r) => {
+                      reactionCounts[r.emoji] = (reactionCounts[r.emoji] || 0) + 1;
+                    });
+
                     return (
                       <div
                         key={msg._id || msg.id || Math.random()}
-                        className={`flex items-end gap-2.5 ${isSelf ? "justify-end" : "justify-start"}`}
+                        className={`flex items-end gap-2.5 group/msg ${isSelf ? "justify-end" : "justify-start"}`}
                         onContextMenu={(e) => handleContextMenu(e, msg)}
                       >
                         {!isSelf && (
@@ -942,9 +1194,22 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                           />
                         )}
 
-                        <div className={`max-w-[75%] space-y-1 ${isSelf ? "items-end text-right" : "items-start text-left"}`}>
+                        <div className={`max-w-[75%] space-y-1 relative ${isSelf ? "items-end text-right" : "items-start text-left"}`}>
                           {!isSelf && activeChannel.type === "team" && (
                             <p className="text-[10px] font-bold text-slate-500 pl-1">{senderName}</p>
+                          )}
+
+                          {/* Threaded Reply Quote Block */}
+                          {msg.replyTo && (
+                            <div className={`text-[10px] p-2 rounded-xl border border-slate-200/80 mb-1 backdrop-blur-xs flex items-center gap-2 ${
+                              isSelf ? "bg-blue-700/20 text-white border-blue-400/30" : "bg-slate-100 text-slate-600"
+                            }`}>
+                              <span className="w-1 h-6 rounded-full bg-blue-500 shrink-0" />
+                              <div className="truncate text-left">
+                                <span className="font-bold">{typeof msg.replyTo.sender === "object" ? msg.replyTo.sender.fullName : "Teammate"}</span>
+                                <p className="truncate opacity-80">{msg.replyTo.content || `[${(msg.replyTo.attachmentType || 'file').toUpperCase()}]`}</p>
+                              </div>
+                            </div>
                           )}
 
                           {isEditingThis ? (
@@ -967,7 +1232,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                             </div>
                           ) : (
                             <div
-                              className={`px-4 py-2.5 text-xs font-medium leading-relaxed whitespace-pre-wrap shadow-sm select-text cursor-context-menu ${
+                              className={`px-4 py-2.5 text-xs font-medium leading-relaxed whitespace-pre-wrap shadow-sm select-text cursor-context-menu relative group/bubble ${
                                 msg.isDeleted
                                   ? "bg-slate-100 text-slate-400 italic border border-slate-200/80 rounded-2xl"
                                   : isSelf
@@ -975,7 +1240,57 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                                   : "bg-white text-slate-800 border border-slate-200/80 rounded-2xl rounded-tl-none"
                               }`}
                             >
-                              {msg.content}
+                              {/* Attachment Rendering */}
+                              {msg.attachmentUrl && !msg.isDeleted && (
+                                <div className="mb-2">
+                                  {msg.attachmentType === "image" ? (
+                                    <a href={msg.attachmentUrl} target="_blank" rel="noopener noreferrer" className="block overflow-hidden rounded-xl border border-white/20 hover:opacity-95 transition">
+                                      <img src={msg.attachmentUrl} alt="Attachment" className="max-h-60 max-w-xs object-cover rounded-xl" />
+                                    </a>
+                                  ) : msg.attachmentType === "audio" ? (
+                                    <div className="flex items-center gap-3 p-2 bg-slate-900/10 rounded-xl">
+                                      <audio controls src={msg.attachmentUrl} className="h-8 max-w-xs rounded-lg focus:outline-none" />
+                                    </div>
+                                  ) : (
+                                    <a
+                                      href={msg.attachmentUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      download={msg.attachmentName || "attachment"}
+                                      className={`flex items-center gap-2.5 p-2.5 rounded-xl border transition ${
+                                        isSelf ? "bg-white/10 border-white/20 text-white hover:bg-white/20" : "bg-slate-50 border-slate-200 text-slate-800 hover:bg-slate-100"
+                                      }`}
+                                    >
+                                      <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center font-bold text-sm shrink-0">
+                                        📄
+                                      </div>
+                                      <div className="truncate flex-1 text-left">
+                                        <p className="font-bold text-xs truncate">{msg.attachmentName || "Document File"}</p>
+                                        <span className="text-[10px] opacity-75 font-semibold">Click to download</span>
+                                      </div>
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+
+                              {msg.content && <span>{msg.content}</span>}
+                            </div>
+                          )}
+
+                          {/* Emoji Reactions Bar below bubble */}
+                          {Object.keys(reactionCounts).length > 0 && (
+                            <div className={`flex flex-wrap gap-1 mt-1 ${isSelf ? "justify-end" : "justify-start"}`}>
+                              {Object.entries(reactionCounts).map(([emoji, count]) => (
+                                <button
+                                  key={emoji}
+                                  type="button"
+                                  onClick={() => handleToggleReaction(msg._id, emoji)}
+                                  className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-white border border-slate-200 text-slate-700 shadow-xs hover:bg-slate-50 transition cursor-pointer"
+                                >
+                                  <span>{emoji}</span>
+                                  <span>{count}</span>
+                                </button>
+                              ))}
                             </div>
                           )}
 
@@ -984,12 +1299,32 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                             {msg.isEdited && !msg.isDeleted && (
                               <span className="italic text-slate-400 font-normal">• (Edited)</span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => setReplyingTo(msg)}
+                              className="text-blue-600 hover:underline cursor-pointer ml-1.5 opacity-0 group-hover/msg:opacity-100 transition"
+                            >
+                              Reply
+                            </button>
                           </div>
                         </div>
                       </div>
                     );
                   })
                 )}
+
+                {/* Animated Typing Indicator */}
+                {Object.keys(typingUsers).length > 0 && (
+                  <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 bg-white border border-slate-200/80 px-3 py-1.5 rounded-full w-fit shadow-xs animate-fadeIn">
+                    <span className="flex gap-1 items-center">
+                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 bg-blue-600 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </span>
+                    <span>{Object.values(typingUsers).join(", ")} {Object.keys(typingUsers).length === 1 ? "is" : "are"} typing...</span>
+                  </div>
+                )}
+
                 <div ref={messagesEndRef} />
               </div>
 
@@ -1065,28 +1400,120 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                 </div>
               )}
 
-              {/* Input Bar */}
-              <div className="p-4 bg-white border-t border-slate-200/80 shrink-0">
-                <form onSubmit={handleSendMessage} className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    placeholder={`Message ${activeChannel.name}...`}
-                    value={newMessageText}
-                    onChange={(e) => setNewMessageText(e.target.value)}
-                    disabled={sending}
-                    className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
-                  />
-                  <button
-                    type="submit"
-                    disabled={!newMessageText.trim() || sending}
-                    className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
-                  >
-                    <span>Send</span>
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                    </svg>
-                  </button>
-                </form>
+              {/* Input Bar & Controls */}
+              <div className="p-4 bg-white border-t border-slate-200/80 shrink-0 space-y-2">
+                
+                {/* Threaded Reply Banner */}
+                {replyingTo && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-blue-50 border border-blue-200/80 rounded-xl text-xs text-blue-900 animate-fadeIn">
+                    <div className="flex items-center gap-2 truncate">
+                      <span className="font-bold text-blue-700">Replying to {typeof replyingTo.sender === "object" ? replyingTo.sender.fullName : "Teammate"}:</span>
+                      <span className="truncate italic">{replyingTo.content || `[${(replyingTo.attachmentType || 'file').toUpperCase()}]`}</span>
+                    </div>
+                    <button type="button" onClick={() => setReplyingTo(null)} className="text-blue-500 hover:text-blue-700 font-bold p-1 cursor-pointer">
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* File Attachment Preview Banner */}
+                {selectedFile && (
+                  <div className="flex items-center justify-between px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-800 animate-fadeIn">
+                    <div className="flex items-center gap-2 truncate">
+                      {selectedFilePreview ? (
+                        <img src={selectedFilePreview} alt="Preview" className="w-8 h-8 rounded-lg object-cover border border-slate-300 shrink-0" />
+                      ) : (
+                        <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">📄</span>
+                      )}
+                      <div className="truncate">
+                        <p className="font-bold text-xs truncate">{selectedFile.name}</p>
+                        <span className="text-[10px] text-slate-500 font-semibold">{(selectedFile.size / 1024).toFixed(1)} KB</span>
+                      </div>
+                    </div>
+                    <button type="button" onClick={clearSelectedFile} className="text-slate-400 hover:text-red-600 font-bold p-1 cursor-pointer">
+                      ✕
+                    </button>
+                  </div>
+                )}
+
+                {/* Voice Note Recording Live Bar */}
+                {isRecording ? (
+                  <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs animate-pulse">
+                    <div className="flex items-center gap-3">
+                      <span className="w-3 h-3 rounded-full bg-red-600 animate-ping" />
+                      <span className="font-bold text-red-700">Recording Voice Note... ({recordingDuration}s)</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={cancelVoiceRecording} className="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200 rounded-lg cursor-pointer">
+                        Cancel
+                      </button>
+                      <button type="button" onClick={stopVoiceRecordingAndSend} className="px-4 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm cursor-pointer">
+                        Send Voice Note
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <form onSubmit={handleSendMessage} className="flex items-center gap-2">
+                    {/* Hidden File Input */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileSelect}
+                      className="hidden"
+                      accept="image/*,.pdf,.doc,.docx,.zip,.txt,audio/*"
+                    />
+
+                    {/* Paperclip Button */}
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer shrink-0"
+                      title="Attach Image or Document"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                      </svg>
+                    </button>
+
+                    {/* Microphone Button */}
+                    <button
+                      type="button"
+                      onClick={startVoiceRecording}
+                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-red-50 text-slate-600 hover:text-red-600 transition cursor-pointer shrink-0"
+                      title="Record Voice Note"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                      </svg>
+                    </button>
+
+                    <input
+                      type="text"
+                      placeholder={`Message ${activeChannel.name}...`}
+                      value={newMessageText}
+                      onChange={handleInputChange}
+                      disabled={sending || uploadingAttachment}
+                      className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-600/10 focus:outline-none transition-all"
+                    />
+
+                    <button
+                      type="submit"
+                      disabled={(!newMessageText.trim() && !selectedFile) || sending || uploadingAttachment}
+                      className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
+                    >
+                      {uploadingAttachment ? (
+                        <span>Uploading...</span>
+                      ) : (
+                        <>
+                          <span>Send</span>
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                          </svg>
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
               </div>
             </>
           ) : (
@@ -1107,32 +1534,65 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     </div>
   </div>
 
-      {/* Right-click Context Menu — rendered as fixed overlay */}
+      {/* Right-click Context Menu & Quick Emoji Bar — rendered as fixed overlay */}
       {contextMenu?.visible && (() => {
         const ctxMsg = contextMenu.msg;
         const senderObj = typeof ctxMsg.sender === "object" ? ctxMsg.sender : {};
         const senderId = senderObj._id || ctxMsg.sender;
         const isSelfMsg = String(senderId) === String(currentUserId);
+        const quickEmojis = ["👍", "❤️", "🚀", "🎉", "💡", "😂"];
+
         return (
           <div
-            className="fixed z-[9999] min-w-[180px] bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 overflow-hidden"
+            className="fixed z-[9999] min-w-[200px] bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 overflow-hidden"
             style={{ left: contextMenu.x, top: contextMenu.y }}
             onClick={(e) => e.stopPropagation()}
           >
+            {/* Quick Emoji Reaction Row */}
+            <div className="flex items-center justify-around px-3 py-1.5 border-b border-slate-100">
+              {quickEmojis.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => {
+                    handleToggleReaction(ctxMsg._id, emoji);
+                    closeContextMenu();
+                  }}
+                  className="hover:scale-125 transition text-base cursor-pointer p-1"
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setReplyingTo(ctxMsg);
+                closeContextMenu();
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition text-left"
+            >
+              <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+              </svg>
+              Reply
+            </button>
+
             {isSelfMsg && !ctxMsg.isDeleted && (
-              <button type="button" onClick={() => { setEditingMessageId(ctxMsg._id); setEditText(ctxMsg.content); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition text-left">
+              <button type="button" onClick={() => { setEditingMessageId(ctxMsg._id); setEditText(ctxMsg.content); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition text-left">
                 <svg className="w-4 h-4 text-blue-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                 Edit
               </button>
             )}
             {isSelfMsg && !ctxMsg.isDeleted && (
-              <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "everyone" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 transition text-left">
+              <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "everyone" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 transition text-left">
                 <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                 Delete for everyone
               </button>
             )}
             {isSelfMsg && !ctxMsg.isDeleted && <div className="my-1 border-t border-slate-100" />}
-            <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "me" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-semibold text-slate-500 hover:bg-slate-50 transition text-left">
+            <button type="button" onClick={() => { setDeleteModal({ msg: ctxMsg, mode: "me" }); closeContextMenu(); }} className="w-full flex items-center gap-3 px-4 py-2.5 text-xs font-semibold text-slate-500 hover:bg-slate-50 transition text-left">
               <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.88 9.88l-3.29-3.29m7.532 7.532l3.29 3.29M3 3l3.59 3.59m0 0A9.953 9.953 0 0112 5c4.478 0 8.268 2.943 9.543 7a10.025 10.025 0 01-4.132 5.411m0 0L21 21" /></svg>
               Delete for me
             </button>

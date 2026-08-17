@@ -35,9 +35,51 @@ app.get("/", (req, res) => {
     res.send("Student Collaboration Platform API Running 🚀");
 });
 
+// Map of online users: userId -> Set of socket.id
+const onlineUsersMap = new Map();
+
 // Real-Time Socket.io Connection Logic
 io.on("connection", (socket) => {
     console.log(`⚡ Socket client connected: ${socket.id}`);
+    let currentSocketUserId = null;
+
+    // Track user online status
+    socket.on("user_online", (userId) => {
+        if (!userId) return;
+        currentSocketUserId = userId.toString();
+
+        if (!onlineUsersMap.has(currentSocketUserId)) {
+            onlineUsersMap.set(currentSocketUserId, new Set());
+        }
+        onlineUsersMap.get(currentSocketUserId).add(socket.id);
+
+        // Broadcast user online event to everyone
+        io.emit("user_status_change", {
+            userId: currentSocketUserId,
+            status: "online",
+            onlineUsers: Array.from(onlineUsersMap.keys())
+        });
+    });
+
+    // Client requests current list of online user IDs
+    socket.on("get_online_users", () => {
+        socket.emit("online_users_list", Array.from(onlineUsersMap.keys()));
+    });
+
+    // Typing Indicators
+    socket.on("typing", (data) => {
+        const { roomId, userId, userName } = data;
+        if (roomId) {
+            socket.to(roomId).emit("user_typing", { userId, userName, roomId });
+        }
+    });
+
+    socket.on("stop_typing", (data) => {
+        const { roomId, userId } = data;
+        if (roomId) {
+            socket.to(roomId).emit("user_stop_typing", { userId, roomId });
+        }
+    });
 
     // Join room (direct chat: dm_user1_user2 or project chat: project_id or user notification: user_userId)
     socket.on("join_room", (roomId) => {
@@ -54,13 +96,17 @@ io.on("connection", (socket) => {
     // Handle sending message in real time
     socket.on("send_message", async (data) => {
         try {
-            const { senderId, chatType, receiverId, projectId, content, roomId } = data;
-            if (!content || !content.trim()) return;
+            const { senderId, chatType, receiverId, projectId, content, attachmentUrl, attachmentType, attachmentName, replyTo, roomId } = data;
+            if ((!content || !content.trim()) && !attachmentUrl) return;
 
             const newMessageData = {
                 sender: senderId,
                 chatType,
-                content: content.trim()
+                content: content ? content.trim() : "",
+                attachmentUrl: attachmentUrl || null,
+                attachmentType: attachmentType || null,
+                attachmentName: attachmentName || null,
+                replyTo: replyTo || null
             };
 
             if (chatType === "direct") {
@@ -72,7 +118,10 @@ io.on("connection", (socket) => {
             const newMessage = new Message(newMessageData);
             await newMessage.save();
 
-            const populatedMessage = await Message.findById(newMessage._id).populate('sender', 'fullName avatar');
+            const populatedMessage = await Message.findById(newMessage._id)
+                .populate('sender', 'fullName avatar')
+                .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+                .populate('reactions.user', 'fullName');
 
             // Emit to everyone in the chat room (including sender)
             io.to(roomId).emit("receive_message", populatedMessage);
@@ -101,7 +150,11 @@ io.on("connection", (socket) => {
             message.isEdited = true;
             await message.save();
 
-            const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+            const updatedMessage = await Message.findById(message._id)
+                .populate('sender', 'fullName avatar')
+                .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+                .populate('reactions.user', 'fullName');
+
             io.to(roomId).emit("message_edited", updatedMessage);
         } catch (err) {
             console.error("Error processing socket message edit:", err);
@@ -117,17 +170,68 @@ io.on("connection", (socket) => {
 
             message.content = "This message was deleted";
             message.isDeleted = true;
+            message.attachmentUrl = null;
+            message.attachmentType = null;
+            message.attachmentName = null;
             await message.save();
 
-            const updatedMessage = await Message.findById(message._id).populate('sender', 'fullName avatar');
+            const updatedMessage = await Message.findById(message._id)
+                .populate('sender', 'fullName avatar')
+                .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+                .populate('reactions.user', 'fullName');
+
             io.to(roomId).emit("message_deleted", updatedMessage);
         } catch (err) {
             console.error("Error processing socket message delete:", err);
         }
     });
 
+    // Handle emoji reactions in real time
+    socket.on("add_reaction", async (data) => {
+        try {
+            const { messageId, emoji, userId, roomId } = data;
+            if (!messageId || !emoji || !userId) return;
+
+            const message = await Message.findById(messageId);
+            if (!message) return;
+
+            const existingIdx = message.reactions.findIndex(
+                r => r.user.toString() === userId.toString() && r.emoji === emoji
+            );
+
+            if (existingIdx > -1) {
+                message.reactions.splice(existingIdx, 1);
+            } else {
+                message.reactions.push({ emoji, user: userId });
+            }
+
+            await message.save();
+
+            const updatedMessage = await Message.findById(message._id)
+                .populate('sender', 'fullName avatar')
+                .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+                .populate('reactions.user', 'fullName');
+
+            io.to(roomId).emit("message_reaction", updatedMessage);
+        } catch (err) {
+            console.error("Error processing socket reaction:", err);
+        }
+    });
+
     socket.on("disconnect", () => {
         console.log(`🔥 Socket client disconnected: ${socket.id}`);
+        if (currentSocketUserId && onlineUsersMap.has(currentSocketUserId)) {
+            const userSockets = onlineUsersMap.get(currentSocketUserId);
+            userSockets.delete(socket.id);
+            if (userSockets.size === 0) {
+                onlineUsersMap.delete(currentSocketUserId);
+                io.emit("user_status_change", {
+                    userId: currentSocketUserId,
+                    status: "offline",
+                    onlineUsers: Array.from(onlineUsersMap.keys())
+                });
+            }
+        }
     });
 });
 

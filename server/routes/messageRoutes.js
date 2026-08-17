@@ -7,6 +7,7 @@ const ConnectionRequest = require('../models/ConnectionRequest');
 const User = require('../models/User');
 const authMiddleware = require('../middleware/authMiddleware');
 const { attachMembersToProjects } = require('../utils/projectHelpers');
+const { chatAttachmentUpload, uploadChatAttachmentToCloudinary } = require('../config/cloudinary');
 
 /**
  * GET /api/messages/conversations
@@ -190,6 +191,8 @@ router.get('/direct/:peerId', authMiddleware, async (req, res) => {
             ]
         })
             .populate('sender', 'fullName avatar')
+            .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+            .populate('reactions.user', 'fullName')
             .sort({ createdAt: 1 });
 
         return res.status(200).json({
@@ -262,6 +265,8 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
             project: projectId
         })
             .populate('sender', 'fullName avatar')
+            .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+            .populate('reactions.user', 'fullName')
             .sort({ createdAt: 1 });
 
         return res.status(200).json({
@@ -286,18 +291,118 @@ router.get('/project/:projectId', authMiddleware, async (req, res) => {
 });
 
 /**
+ * POST /api/messages/upload
+ * Upload media, document file, or audio voice note to Cloudinary for chat
+ */
+router.post('/upload', authMiddleware, (req, res) => {
+    chatAttachmentUpload.single('file')(req, res, async (err) => {
+        if (err) {
+            return res.status(400).json({ success: false, message: err.message || "File upload error" });
+        }
+        if (!req.file) {
+            return res.status(400).json({ success: false, message: "No file provided" });
+        }
+
+        try {
+            const originalName = req.file.originalname || "attachment";
+            const mimetype = req.file.mimetype || "";
+            let attachmentType = "file";
+
+            if (mimetype.startsWith("image/")) {
+                attachmentType = "image";
+            } else if (mimetype.startsWith("audio/")) {
+                attachmentType = "audio";
+            }
+
+            const result = await uploadChatAttachmentToCloudinary(req.file.buffer, mimetype, originalName);
+
+            return res.status(200).json({
+                success: true,
+                attachmentUrl: result.secure_url,
+                attachmentType: attachmentType,
+                attachmentName: originalName
+            });
+        } catch (uploadError) {
+            console.error("Chat upload failed:", uploadError);
+            return res.status(500).json({
+                success: false,
+                message: uploadError.message || "Server error uploading file"
+            });
+        }
+    });
+});
+
+/**
+ * POST /api/messages/reaction
+ * Toggle emoji reaction on a message
+ */
+router.post('/reaction', authMiddleware, async (req, res) => {
+    try {
+        const userId = req.user;
+        const { messageId, emoji } = req.body;
+
+        if (!messageId || !emoji) {
+            return res.status(400).json({ success: false, message: "Message ID and emoji are required" });
+        }
+
+        const message = await Message.findById(messageId);
+        if (!message) {
+            return res.status(404).json({ success: false, message: "Message not found" });
+        }
+
+        const existingIdx = message.reactions.findIndex(
+            r => r.user.toString() === userId.toString() && r.emoji === emoji
+        );
+
+        if (existingIdx > -1) {
+            message.reactions.splice(existingIdx, 1);
+        } else {
+            message.reactions.push({ emoji, user: userId });
+        }
+
+        await message.save();
+
+        const updatedMessage = await Message.findById(message._id)
+            .populate('sender', 'fullName avatar')
+            .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+            .populate('reactions.user', 'fullName');
+
+        // Emit socket event if io is available
+        const io = req.app.get('io');
+        if (io) {
+            let roomId = "";
+            if (updatedMessage.chatType === "direct") {
+                const sortedIds = [updatedMessage.sender._id.toString(), updatedMessage.receiver.toString()].sort();
+                roomId = `dm_${sortedIds[0]}_${sortedIds[1]}`;
+            } else {
+                roomId = `project_${updatedMessage.project.toString()}`;
+            }
+            io.to(roomId).emit("message_reaction", updatedMessage);
+        }
+
+        return res.status(200).json({
+            success: true,
+            data: updatedMessage
+        });
+    } catch (error) {
+        console.error("Error toggling reaction:", error);
+        return res.status(500).json({ success: false, message: "Server error toggling reaction" });
+    }
+});
+
+/**
  * POST /api/messages/send
  * Send a message via REST API
  */
 router.post('/send', authMiddleware, async (req, res) => {
     try {
         const senderId = req.user;
-        const { chatType, receiverId, projectId, content } = req.body;
+        const { chatType, receiverId, projectId, content, attachmentUrl, attachmentType, attachmentName, replyTo } = req.body;
 
-        if (!content || !content.trim()) {
+        if ((!content || !content.trim()) && !attachmentUrl) {
             return res.status(400).json({
                 success: false,
-                message: "Message content cannot be empty"
+                message: "Message must contain text or an attachment"
             });
         }
 
@@ -311,7 +416,11 @@ router.post('/send', authMiddleware, async (req, res) => {
         const newMessageData = {
             sender: senderId,
             chatType,
-            content: content.trim()
+            content: content ? content.trim() : "",
+            attachmentUrl: attachmentUrl || null,
+            attachmentType: attachmentType || null,
+            attachmentName: attachmentName || null,
+            replyTo: replyTo || null
         };
 
         if (chatType === 'direct') {
@@ -329,7 +438,10 @@ router.post('/send', authMiddleware, async (req, res) => {
         const newMessage = new Message(newMessageData);
         await newMessage.save();
 
-        const populatedMessage = await Message.findById(newMessage._id).populate('sender', 'fullName avatar');
+        const populatedMessage = await Message.findById(newMessage._id)
+            .populate('sender', 'fullName avatar')
+            .populate({ path: 'replyTo', select: 'content sender attachmentType', populate: { path: 'sender', select: 'fullName' } })
+            .populate('reactions.user', 'fullName');
 
         return res.status(201).json({
             success: true,

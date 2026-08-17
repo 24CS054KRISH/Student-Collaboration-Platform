@@ -244,11 +244,94 @@ function uploadCoverToCloudinary(buffer, mimetype) {
     });
 }
 
+const chatAttachmentUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB for images, docs, audio voice notes
+    fileFilter: (_req, _file, cb) => {
+        cb(null, true);
+    }
+});
+
+/**
+ * Upload a chat attachment (image, raw file, or audio voice note) to Cloudinary.
+ * @param {Buffer} buffer
+ * @param {string} mimetype
+ * @param {string} originalName
+ * @returns {Promise<{ secure_url: string, resource_type: string }>}
+ */
+function uploadChatAttachmentToCloudinary(buffer, mimetype, originalName = "") {
+    return new Promise((resolve, reject) => {
+        if (!buffer || buffer.length === 0) {
+            return reject(new Error('File buffer is empty'));
+        }
+
+        cloudinary.config({
+            cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+            api_key:    process.env.CLOUDINARY_API_KEY,
+            api_secret: process.env.CLOUDINARY_API_SECRET,
+            secure:     true,
+        });
+
+        let resourceType = "auto";
+        let folder = "student-collab/chat_files";
+
+        if (mimetype.startsWith("image/")) {
+            resourceType = "image";
+            folder = "student-collab/chat_images";
+        } else if (mimetype.startsWith("audio/")) {
+            resourceType = "video"; // Cloudinary treats audio as video resource_type
+            folder = "student-collab/voice_notes";
+        } else {
+            resourceType = "raw";
+            folder = "student-collab/chat_docs";
+        }
+
+        try {
+            const uploadOptions = {
+                folder,
+                resource_type: resourceType
+            };
+
+            if (resourceType === "raw" && originalName) {
+                uploadOptions.public_id = `${Date.now()}_${originalName.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+            }
+
+            const uploadStream = cloudinary.uploader.upload_stream(
+                uploadOptions,
+                (error, result) => {
+                    if (error) {
+                        console.error('[Cloudinary] Chat upload error:', error.message || error);
+                        reject(new Error(error.message || 'Chat file upload failed'));
+                    } else if (result && result.secure_url) {
+                        console.log('[Cloudinary] Chat file upload success:', result.secure_url);
+                        resolve({
+                            secure_url: result.secure_url,
+                            resource_type: resourceType
+                        });
+                    } else {
+                        reject(new Error('Cloudinary returned no secure_url'));
+                    }
+                }
+            );
+
+            uploadStream.on('error', (streamErr) => {
+                reject(streamErr instanceof Error ? streamErr : new Error(String(streamErr)));
+            });
+
+            uploadStream.end(buffer);
+        } catch (syncErr) {
+            reject(syncErr instanceof Error ? syncErr : new Error(String(syncErr)));
+        }
+    });
+}
+
 module.exports = {
     avatarUpload,
     coverUpload,
+    chatAttachmentUpload,
     uploadToCloudinary,
     uploadCoverToCloudinary,
+    uploadChatAttachmentToCloudinary,
     deleteFromCloudinary,
     extractCloudinaryPublicId
 };
