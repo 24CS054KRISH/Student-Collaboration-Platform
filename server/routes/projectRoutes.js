@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Project = require('../models/Project');
 const ProjectApplication = require('../models/ProjectApplication');
-const ActivityLog = require('../models/ActivityLog');
 const authMiddleware = require('../middleware/authMiddleware');
 const { sendProjectJoinEmail } = require('../services/emailService');
 
@@ -36,21 +35,6 @@ router.post('/create', authMiddleware, async (req, res) => {
         await newProject.save();
         const populatedProject = await Project.findById(newProject._id).populate('createdBy', 'fullName email college branch year skills bio github linkedin portfolio');
         const [createdProjectWithMembers] = await attachMembersToProjects([populatedProject]);
-
-        try {
-            const activity = new ActivityLog({
-                user: req.user,
-                type: 'project_created',
-                title: `launched a new project: "${title}"`,
-                description: description ? description.substring(0, 100) : "",
-                meta: { projectId: newProject._id }
-            });
-            await activity.save();
-            const populatedActivity = await ActivityLog.findById(activity._id).populate('user', 'fullName email avatar branch year college skills');
-            req.app.get('io')?.emit('new_activity_event', populatedActivity);
-        } catch (actErr) {
-            console.error("Error logging project_created activity:", actErr);
-        }
 
         return res.status(201).json({
             success: true,

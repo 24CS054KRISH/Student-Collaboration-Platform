@@ -5,7 +5,7 @@ import { useToast } from "./Toast";
 
 const SOCKET_SERVER_URL = "http://localhost:5000";
 
-export default function Messages({ initialPeer, onSelectPeer }) {
+export default function Messages({ initialPeer, initialChannel, onSelectPeer }) {
   const [conversations, setConversations] = useState({ directChats: [], teamChats: [] });
   const [loadingChannels, setLoadingChannels] = useState(true);
   const [channelSearch, setChannelSearch] = useState("");
@@ -34,11 +34,8 @@ export default function Messages({ initialPeer, onSelectPeer }) {
   const [typingUsers, setTypingUsers] = useState({}); // { [userId]: userName }
   const typingTimeoutRef = useRef(null);
 
-  // File Attachment & Voice Note States
-  const [selectedFile, setSelectedFile] = useState(null);
-  const [selectedFilePreview, setSelectedFilePreview] = useState(null);
+  // Voice Note Upload State
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
-  const fileInputRef = useRef(null);
 
   // Voice Note Recording States
   const [isRecording, setIsRecording] = useState(false);
@@ -271,8 +268,43 @@ export default function Messages({ initialPeer, onSelectPeer }) {
           setLastMessageByChannel((prev) => ({ ...initialLastMsg, ...prev }));
           setTeamMembersMap((prev) => ({ ...initialMembers, ...prev }));
 
-          // If initialPeer is passed from parent component (e.g. MyConnections), pre-select it!
-          if (initialPeer) {
+          // 1. If initialChannel is passed from GlobalSearch, pre-select it
+          if (initialChannel) {
+            if (initialChannel.type === "team") {
+              const foundTeam = team.find((t) => String(t._id) === String(initialChannel.id || initialChannel._id));
+              if (foundTeam) {
+                setActiveChannel({
+                  type: "team",
+                  id: foundTeam._id,
+                  name: foundTeam.title,
+                  subtitle: `${foundTeam.category} • ${foundTeam.status || "Active"}`,
+                  avatar: null,
+                  members: foundTeam.members || []
+                });
+              }
+            } else if (initialChannel.type === "direct") {
+              const peerId = initialChannel.id || initialChannel._id;
+              const foundDirect = direct.find((d) => String(d._id) === String(peerId));
+              const fullPeer = foundDirect || initialChannel.peerObj || initialChannel;
+              const name = fullPeer.fullName || fullPeer.name || "Student";
+              const branchYear = [
+                fullPeer.branch || fullPeer.department,
+                fullPeer.year ? `${fullPeer.year} Year` : null
+              ].filter(Boolean).join(" • ") || "Student";
+              const avatar = fullPeer.avatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0D8ABC&color=fff`;
+
+              setActiveChannel({
+                type: "direct",
+                id: peerId,
+                name: name,
+                subtitle: branchYear,
+                avatar: avatar,
+                peerObj: fullPeer
+              });
+            }
+          }
+          // 2. If initialPeer is passed from parent component (e.g. MyConnections), pre-select it!
+          else if (initialPeer) {
             const peerId = initialPeer._id || initialPeer.id;
             const name = initialPeer.fullName || initialPeer.name || "Student";
             const branchYear = [
@@ -328,7 +360,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     };
 
     fetchChannels();
-  }, [initialPeer]);
+  }, [initialPeer, initialChannel]);
 
   // 3. Handle Channel Switch & Room Joining
   useEffect(() => {
@@ -421,25 +453,6 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     }
   };
 
-  // File selection handler
-  const handleFileSelect = (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setSelectedFile(file);
-    if (file.type.startsWith("image/")) {
-      const reader = new FileReader();
-      reader.onloadend = () => setSelectedFilePreview(reader.result);
-      reader.readAsDataURL(file);
-    } else {
-      setSelectedFilePreview(null);
-    }
-  };
-
-  const clearSelectedFile = () => {
-    setSelectedFile(null);
-    setSelectedFilePreview(null);
-    if (fileInputRef.current) fileInputRef.current.value = "";
-  };
 
   // Voice Note Recording Handlers
   const startVoiceRecording = async () => {
@@ -527,7 +540,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     }
   };
 
-  // Shared Helper to Upload & Send Message
+  // Shared Helper to Upload & Send Message (Voice Notes)
   const sendAttachmentOrMessage = async (fileToUpload = null, forceType = null) => {
     if (!activeChannel) return;
 
@@ -535,7 +548,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
     let attachmentType = null;
     let attachmentName = null;
 
-    const file = fileToUpload || selectedFile;
+    const file = fileToUpload;
 
     if (file) {
       try {
@@ -549,8 +562,8 @@ export default function Messages({ initialPeer, onSelectPeer }) {
           attachmentName = uploadRes.attachmentName;
         }
       } catch (err) {
-        console.error("Failed to upload chat file:", err);
-        showToast("Failed to upload file attachment", "error");
+        console.error("Failed to upload voice note:", err);
+        showToast("Failed to upload voice note", "error");
         setUploadingAttachment(false);
         return;
       } finally {
@@ -563,7 +576,6 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
     emitStopTyping();
     setNewMessageText("");
-    clearSelectedFile();
 
     const replyToId = replyingTo ? replyingTo._id : undefined;
     setReplyingTo(null);
@@ -1416,26 +1428,6 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                   </div>
                 )}
 
-                {/* File Attachment Preview Banner */}
-                {selectedFile && (
-                  <div className="flex items-center justify-between px-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-800 animate-fadeIn">
-                    <div className="flex items-center gap-2 truncate">
-                      {selectedFilePreview ? (
-                        <img src={selectedFilePreview} alt="Preview" className="w-8 h-8 rounded-lg object-cover border border-slate-300 shrink-0" />
-                      ) : (
-                        <span className="w-8 h-8 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center font-bold text-xs shrink-0">📄</span>
-                      )}
-                      <div className="truncate">
-                        <p className="font-bold text-xs truncate">{selectedFile.name}</p>
-                        <span className="text-[10px] text-slate-500 font-semibold">{(selectedFile.size / 1024).toFixed(1)} KB</span>
-                      </div>
-                    </div>
-                    <button type="button" onClick={clearSelectedFile} className="text-slate-400 hover:text-red-600 font-bold p-1 cursor-pointer">
-                      ✕
-                    </button>
-                  </div>
-                )}
-
                 {/* Voice Note Recording Live Bar */}
                 {isRecording ? (
                   <div className="flex items-center justify-between bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-xs animate-pulse">
@@ -1454,27 +1446,6 @@ export default function Messages({ initialPeer, onSelectPeer }) {
                   </div>
                 ) : (
                   <form onSubmit={handleSendMessage} className="flex items-center gap-2">
-                    {/* Hidden File Input */}
-                    <input
-                      type="file"
-                      ref={fileInputRef}
-                      onChange={handleFileSelect}
-                      className="hidden"
-                      accept="image/*,.pdf,.doc,.docx,.zip,.txt,audio/*"
-                    />
-
-                    {/* Paperclip Button */}
-                    <button
-                      type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition cursor-pointer shrink-0"
-                      title="Attach Image or Document"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                      </svg>
-                    </button>
-
                     {/* Microphone Button */}
                     <button
                       type="button"
@@ -1498,7 +1469,7 @@ export default function Messages({ initialPeer, onSelectPeer }) {
 
                     <button
                       type="submit"
-                      disabled={(!newMessageText.trim() && !selectedFile) || sending || uploadingAttachment}
+                      disabled={!newMessageText.trim() || sending || uploadingAttachment}
                       className="px-5 py-3 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md shadow-blue-500/15 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-1.5 shrink-0"
                     >
                       {uploadingAttachment ? (

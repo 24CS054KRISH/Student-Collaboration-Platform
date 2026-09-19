@@ -14,7 +14,7 @@ import { getConversations } from "../api/messageApi";
 import ProjectDetailsDrawer from "./ProjectDetailsDrawer";
 import ProjectEditModal from "./ProjectEditModal";
 import PeerProfileModal from "./PeerProfileModal";
-import ActivityFeed from "./ActivityFeed";
+import GlobalSearch from "./GlobalSearch";
 
 export default function Dashboard({ onNavigate }) {
   const [activeTab, setActiveTab] = useState(() => {
@@ -31,6 +31,7 @@ export default function Dashboard({ onNavigate }) {
   const [editingProject, setEditingProject] = useState(null);
   const [viewingProject, setViewingProject] = useState(null);
   const [selectedPeerForChat, setSelectedPeerForChat] = useState(null);
+  const [selectedChannelForChat, setSelectedChannelForChat] = useState(null);
   const [selectedPeerForModal, setSelectedPeerForModal] = useState(null);
   
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
@@ -665,11 +666,6 @@ export default function Dashboard({ onNavigate }) {
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
       </svg>
     )},
-    { name: "Activity Feed", icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
-      </svg>
-    )},
     { name: "My Projects", icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -1031,51 +1027,71 @@ export default function Dashboard({ onNavigate }) {
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-slate-800 antialiased">
       
       {/* MOBILE HEADER BAR */}
-      <header className="md:hidden w-full flex items-center justify-between bg-white px-4 h-16 border-b border-slate-200 sticky top-0 z-40">
-        <div
-          onClick={() => {
-            handleTabChange("Dashboard");
-            setSidebarOpen(false);
-          }}
-          className="flex items-center gap-2 cursor-pointer select-none"
-        >
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20">
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5.5 w-5.5">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
-            </svg>
-          </div>
-          <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-lg font-bold tracking-tight text-transparent">
-            CollabGrad
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          {canGoBack && (
-            <button
-              type="button"
-              onClick={handleGoBack}
-              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shrink-0 cursor-pointer"
-            >
-              <svg className="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
-              </svg>
-              <span>Back</span>
-            </button>
-          )}
-          {renderNotificationBellAndDropdown(true)}
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none cursor-pointer"
+      <header className="md:hidden w-full flex flex-col bg-white border-b border-slate-200 sticky top-0 z-40">
+        <div className="flex items-center justify-between px-4 h-16">
+          <div
+            onClick={() => {
+              handleTabChange("Dashboard");
+              setSidebarOpen(false);
+            }}
+            className="flex items-center gap-2 cursor-pointer select-none"
           >
-            {sidebarOpen ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 text-white shadow-sm shadow-blue-500/20">
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="h-5.5 w-5.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 0 0 3.741-.479 3 3 0 0 0-4.682-2.72m.94 3.198.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0 1 12 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 0 1 6 18.719m12 0a5.971 5.971 0 0 0-.941-3.197m0 0A5.995 5.995 0 0 0 12 12.75a5.995 5.995 0 0 0-5.058 2.772m0 0a3 3 0 0 0-4.681 2.72 8.986 8.986 0 0 0 3.74.477m.94-3.197a5.971 5.971 0 0 0-.94 3.197M15 6.75a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Zm-13.5 0a2.25 2.25 0 1 1-4.5 0 2.25 2.25 0 0 1 4.5 0Z" />
               </svg>
-            ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
+            </div>
+            <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-lg font-bold tracking-tight text-transparent">
+              CollabGrad
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            {canGoBack && (
+              <button
+                type="button"
+                onClick={handleGoBack}
+                className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg shrink-0 cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" />
+                </svg>
+                <span>Back</span>
+              </button>
             )}
-          </button>
+            {renderNotificationBellAndDropdown(true)}
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 focus:outline-none cursor-pointer"
+            >
+              {sidebarOpen ? (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+                </svg>
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="px-4 pb-3">
+          <GlobalSearch
+            onSelectProject={(proj) => setViewingProject(proj)}
+            onSelectStudent={(student) => setSelectedPeerForModal(student)}
+            onSelectConnection={(conn) => setSelectedPeerForModal(conn)}
+            onSelectChat={(chat) => {
+              if (chat.type === "direct") {
+                setSelectedPeerForChat(chat.peerObj || chat);
+                setSelectedChannelForChat(null);
+              } else {
+                setSelectedPeerForChat(null);
+                setSelectedChannelForChat(chat);
+              }
+              handleTabChange("Messages");
+            }}
+            className="w-full"
+          />
         </div>
       </header>
 
@@ -1212,6 +1228,22 @@ export default function Dashboard({ onNavigate }) {
             </div>
           </div>
           <div className="flex items-center gap-4 relative">
+             <GlobalSearch
+               onSelectProject={(proj) => setViewingProject(proj)}
+               onSelectStudent={(student) => setSelectedPeerForModal(student)}
+               onSelectConnection={(conn) => setSelectedPeerForModal(conn)}
+               onSelectChat={(chat) => {
+                 if (chat.type === "direct") {
+                   setSelectedPeerForChat(chat.peerObj || chat);
+                   setSelectedChannelForChat(null);
+                 } else {
+                   setSelectedPeerForChat(null);
+                   setSelectedChannelForChat(chat);
+                 }
+                 handleTabChange("Messages");
+               }}
+               className="w-72 lg:w-80"
+             />
              {renderNotificationBellAndDropdown(false)}
           </div>
         </div>
@@ -1431,13 +1463,6 @@ export default function Dashboard({ onNavigate }) {
                 </div>
               )}
             </div>
-
-            {/* 4. Live Activity Preview */}
-            <ActivityFeed
-              isPreview={true}
-              onViewAllActivity={() => handleTabChange("Activity Feed")}
-              onSelectPeer={(peer) => setSelectedPeerForModal(peer)}
-            />
           </div>
         )}
 
@@ -1512,19 +1537,7 @@ export default function Dashboard({ onNavigate }) {
           </div>
         )}
 
-        {/* ============================================== */}
-        {/* TAB CONTENT: ACTIVITY FEED */}
-        {/* ============================================== */}
-        {activeTab === "Activity Feed" && (
-          <div className="space-y-6">
-            <div className="border-b border-slate-200/60 pb-5">
-              <h2 className="text-xl md:text-2xl font-extrabold text-slate-900 tracking-tight">Platform Activity Feed</h2>
-              <p className="text-xs font-semibold text-slate-400 mt-1">Live real-time stream of all collaboration events across the platform</p>
-            </div>
 
-            <ActivityFeed isPreview={false} onSelectPeer={(peer) => setSelectedPeerForModal(peer)} />
-          </div>
-        )}
 
         {/* ============================================== */}
         {/* TAB CONTENT: MY PROJECTS */}
@@ -1575,6 +1588,7 @@ export default function Dashboard({ onNavigate }) {
         {activeTab === "Messages" && (
           <Messages
             initialPeer={selectedPeerForChat}
+            initialChannel={selectedChannelForChat}
             onSelectPeer={(peer) => setSelectedPeerForModal(peer)}
           />
         )}

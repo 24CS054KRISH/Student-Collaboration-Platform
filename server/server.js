@@ -1,15 +1,16 @@
+require("dotenv").config({ quiet: true });
 const http = require("http");
+const express = require("express");
+const cors = require("cors");
+const mongoose = require("mongoose");
 const { Server } = require("socket.io");
+
 const authRoutes = require("./routes/authRoutes");
 const projectRoutes = require("./routes/projectRoutes");
 const connectionRoutes = require("./routes/connectionRoutes");
 const messageRoutes = require("./routes/messageRoutes");
-const activityRoutes = require("./routes/activityRoutes");
+const searchRoutes = require("./routes/searchRoutes");
 const Message = require("./models/Message");
-const express = require("express");
-const cors = require("cors");
-const mongoose = require("mongoose");
-require("dotenv").config();
 
 const app = express();
 const server = http.createServer(app);
@@ -29,7 +30,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/connections", connectionRoutes);
 app.use("/api/messages", messageRoutes);
-app.use("/api/activity", activityRoutes);
+app.use("/api/search", searchRoutes);
 
 app.get("/", (req, res) => {
     res.send("Student Collaboration Platform API Running 🚀");

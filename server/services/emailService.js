@@ -1,6 +1,19 @@
-const { google } = require('googleapis');
-const MailComposer = require('nodemailer/lib/mail-composer');
-require('dotenv').config();
+// Lazy-loaded dependencies to avoid loading 250+ Google APIs at server startup
+let _google = null;
+function getGoogle() {
+  if (!_google) {
+    _google = require('googleapis').google;
+  }
+  return _google;
+}
+
+let _MailComposer = null;
+function getMailComposer() {
+  if (!_MailComposer) {
+    _MailComposer = require('nodemailer/lib/mail-composer');
+  }
+  return _MailComposer;
+}
 
 /**
  * Creates and configures a Google OAuth2 client.
@@ -16,6 +29,7 @@ function getOAuth2Client() {
     return null;
   }
 
+  const google = getGoogle();
   const oAuth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   oAuth2Client.setCredentials({ refresh_token: refreshToken });
   return oAuth2Client;
@@ -32,6 +46,8 @@ async function sendRawGmailMessage({ from, to, subject, html }) {
   }
 
   try {
+    const google = getGoogle();
+    const MailComposer = getMailComposer();
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
     const senderEmail = process.env.GMAIL_SENDER_EMAIL || 'noreply@collabgrad.com';
 
