@@ -3,51 +3,132 @@ const router = express.Router();
 const User = require('../models/User');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const { sendVerificationOtpEmail } = require('../services/emailService');
+
+/**
+ * Generates a 6-digit numeric OTP code.
+ */
+function generateOtp() {
+    return crypto.randomInt(100000, 1000000).toString();
+}
+
+/**
+ * Computes a SHA-256 hash of the OTP for secure database storage.
+ */
+function hashOtp(otp) {
+    return crypto.createHash('sha256').update(String(otp).trim()).digest('hex');
+}
 
 // POST /register
 router.post('/register', async (req, res) => {
     try {
         const { fullName, email, password, college, branch, department, year, skills } = req.body;
 
+        if (!email || !password || !fullName) {
+            return res.status(400).json({ success: false, message: "Full name, email, and password are required." });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
         // Check if email already exists
-        const existingUser = await User.findOne({ email });
+        const existingUser = await User.findOne({ email: normalizedEmail });
         if (existingUser) {
-            return res.status(400).json({ message: "User already exists" });
+            if (existingUser.isEmailVerified) {
+                return res.status(400).json({ success: false, message: "An account with this email already exists. Please log in." });
+            }
+
+            // User registered before but has not verified email yet.
+            // Check resend cooldown (60 seconds)
+            const COOLDOWN_MS = 60 * 1000;
+            if (existingUser.emailVerificationLastSentAt) {
+                const elapsed = Date.now() - new Date(existingUser.emailVerificationLastSentAt).getTime();
+                if (elapsed < COOLDOWN_MS) {
+                    const remainingSeconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+                    return res.status(429).json({
+                        success: false,
+                        message: `Verification code was recently sent. Please wait ${remainingSeconds} seconds before requesting a new code.`,
+                        remainingSeconds,
+                        requireVerification: true,
+                        email: normalizedEmail
+                    });
+                }
+            }
+
+            // Update unverified user with new password / details if provided, and generate new OTP
+            const saltRounds = 10;
+            const hashedPassword = await bcrypt.hash(password, saltRounds);
+            const otp = generateOtp();
+            const otpHash = hashOtp(otp);
+
+            existingUser.fullName = fullName || existingUser.fullName;
+            existingUser.password = hashedPassword;
+            if (college) existingUser.college = college;
+            if (branch || department) existingUser.branch = branch || department;
+            if (year) existingUser.year = year;
+            if (skills) {
+                existingUser.skills = typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : skills;
+            }
+            existingUser.emailVerificationOtpHash = otpHash;
+            existingUser.emailVerificationOtpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
+            existingUser.emailVerificationLastSentAt = new Date();
+
+            await existingUser.save();
+
+            // Asynchronously dispatch OTP via Gmail REST API
+            sendVerificationOtpEmail({
+                recipientEmail: existingUser.email,
+                recipientName: existingUser.fullName,
+                otp
+            }).catch(err => console.error("Error sending registration verification email:", err.message));
+
+            return res.status(200).json({
+                success: true,
+                message: "Registration updated. A 6-digit verification code has been sent to your email.",
+                email: existingUser.email,
+                requireVerification: true
+            });
         }
 
         // Hash password before saving
         const saltRounds = 10;
         const hashedPassword = await bcrypt.hash(password, saltRounds);
 
+        // Generate 6-digit OTP and hash it
+        const otp = generateOtp();
+        const otpHash = hashOtp(otp);
+        const otpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
         // Create new user
         const newUser = new User({
             fullName,
-            email,
+            email: normalizedEmail,
             password: hashedPassword,
             college,
             branch: branch || department,
             year,
-            skills: typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : (skills || [])
+            skills: typeof skills === 'string' ? skills.split(',').map(s => s.trim()).filter(Boolean) : (skills || []),
+            isEmailVerified: false,
+            emailVerificationOtpHash: otpHash,
+            emailVerificationOtpExpiresAt: otpExpiresAt,
+            emailVerificationLastSentAt: new Date()
         });
 
         // Save to MongoDB
         await newUser.save();
 
-        // Sign JWT token
-        const token = jwt.sign(
-            { id: newUser._id },
-            process.env.JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
-        const userObj = newUser.toObject();
-        delete userObj.password;
+        // Asynchronously dispatch OTP via Gmail REST API
+        sendVerificationOtpEmail({
+            recipientEmail: newUser.email,
+            recipientName: newUser.fullName,
+            otp
+        }).catch(err => console.error("Error sending registration verification email:", err.message));
 
         return res.status(201).json({
             success: true,
-            message: "User registered successfully",
-            token,
-            user: userObj
+            message: "Registration successful! A 6-digit verification code has been sent to your email.",
+            email: newUser.email,
+            requireVerification: true
         });
     } catch (error) {
         console.error("Error registering user:", error);
@@ -58,13 +139,190 @@ router.post('/register', async (req, res) => {
     }
 });
 
+// POST /verify-email
+router.post('/verify-email', async (req, res) => {
+    try {
+        const { email, otp } = req.body;
+
+        if (!email || !otp) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and 6-digit verification code are required."
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const cleanedOtp = String(otp).trim();
+
+        if (cleanedOtp.length !== 6 || !/^\d{6}$/.test(cleanedOtp)) {
+            return res.status(400).json({
+                success: false,
+                message: "Please enter a valid 6-digit numeric verification code."
+            });
+        }
+
+        const user = await User.findOne({ email: normalizedEmail });
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "User account not found."
+            });
+        }
+
+        if (user.isEmailVerified) {
+            const token = jwt.sign(
+                { id: user._id },
+                process.env.JWT_SECRET,
+                { expiresIn: '7d' }
+            );
+            const userObj = user.toObject();
+            delete userObj.password;
+            delete userObj.emailVerificationOtpHash;
+            return res.status(200).json({
+                success: true,
+                message: "Email is already verified. You are logged in.",
+                token,
+                user: userObj
+            });
+        }
+
+        // Check if OTP is expired
+        if (!user.emailVerificationOtpExpiresAt || Date.now() > new Date(user.emailVerificationOtpExpiresAt).getTime()) {
+            return res.status(400).json({
+                success: false,
+                message: "Verification code has expired. Please click Resend Code to receive a new one."
+            });
+        }
+
+        // Compare OTP hashes
+        const incomingHash = hashOtp(cleanedOtp);
+        if (incomingHash !== user.emailVerificationOtpHash) {
+            return res.status(400).json({
+                success: false,
+                message: "Invalid verification code. Please check and try again."
+            });
+        }
+
+        // Mark user as verified and clear OTP credentials
+        user.isEmailVerified = true;
+        user.emailVerificationOtpHash = null;
+        user.emailVerificationOtpExpiresAt = null;
+        user.emailVerificationLastSentAt = null;
+        await user.save();
+
+        // Issue JWT token upon successful verification
+        const token = jwt.sign(
+            { id: user._id },
+            process.env.JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        const userObj = user.toObject();
+        delete userObj.password;
+        delete userObj.emailVerificationOtpHash;
+
+        return res.status(200).json({
+            success: true,
+            message: "Email verified successfully! Welcome to CollabGrad.",
+            token,
+            user: userObj
+        });
+    } catch (error) {
+        console.error("Error verifying email:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error during email verification."
+        });
+    }
+});
+
+// POST /resend-verification
+router.post('/resend-verification', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        if (!email) {
+            return res.status(400).json({
+                success: false,
+                message: "Email address is required."
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+        const user = await User.findOne({ email: normalizedEmail });
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                message: "No account found with this email address."
+            });
+        }
+
+        if (user.isEmailVerified) {
+            return res.status(400).json({
+                success: false,
+                message: "This email is already verified. Please sign in."
+            });
+        }
+
+        // 60-second cooldown check
+        const COOLDOWN_MS = 60 * 1000;
+        if (user.emailVerificationLastSentAt) {
+            const elapsed = Date.now() - new Date(user.emailVerificationLastSentAt).getTime();
+            if (elapsed < COOLDOWN_MS) {
+                const remainingSeconds = Math.ceil((COOLDOWN_MS - elapsed) / 1000);
+                return res.status(429).json({
+                    success: false,
+                    message: `Please wait ${remainingSeconds} seconds before requesting another code.`,
+                    remainingSeconds
+                });
+            }
+        }
+
+        // Generate fresh 6-digit OTP
+        const otp = generateOtp();
+        user.emailVerificationOtpHash = hashOtp(otp);
+        user.emailVerificationOtpExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+        user.emailVerificationLastSentAt = new Date();
+
+        await user.save();
+
+        // Asynchronously dispatch OTP via Gmail REST API
+        sendVerificationOtpEmail({
+            recipientEmail: user.email,
+            recipientName: user.fullName,
+            otp
+        }).catch(err => console.error("Error sending resend verification email:", err.message));
+
+        return res.status(200).json({
+            success: true,
+            message: "A new verification code has been sent to your email."
+        });
+    } catch (error) {
+        console.error("Error resending verification code:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Server error while resending verification code."
+        });
+    }
+});
+
 // POST /login
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: "Email and password are required"
+            });
+        }
+
+        const normalizedEmail = email.toLowerCase().trim();
+
         // 1. Find user by email
-        const user = await User.findOne({ email });
+        const user = await User.findOne({ email: normalizedEmail });
 
         // 2. If user not found
         if (!user) {
@@ -83,7 +341,17 @@ router.post('/login', async (req, res) => {
             });
         }
 
-        // 4. If correct
+        // 4. Check if email is verified
+        if (user.isEmailVerified === false) {
+            return res.status(403).json({
+                success: false,
+                isUnverified: true,
+                email: user.email,
+                message: "Please verify your email before logging in. An OTP was sent to your email during registration."
+            });
+        }
+
+        // 5. If correct & verified
         const token = jwt.sign(
             { id: user._id },
             process.env.JWT_SECRET,
@@ -92,6 +360,7 @@ router.post('/login', async (req, res) => {
 
         const userObj = user.toObject();
         delete userObj.password;
+        delete userObj.emailVerificationOtpHash;
 
         return res.status(200).json({
             success: true,
@@ -113,7 +382,7 @@ const authMiddleware = require('../middleware/authMiddleware');
 // GET /me - Verify current user JWT token and return session user profile
 router.get('/me', authMiddleware, async (req, res) => {
     try {
-        const user = await User.findById(req.user).select('-password');
+        const user = await User.findById(req.user).select('-password -emailVerificationOtpHash');
         if (!user) {
             return res.status(404).json({
                 success: false,
@@ -136,7 +405,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 // GET /users - Fetch all registered users
 router.get('/users', async (req, res) => {
     try {
-        const users = await User.find({}, '-password');
+        const users = await User.find({}, '-password -emailVerificationOtpHash');
         return res.status(200).json({
             success: true,
             users
@@ -153,7 +422,7 @@ router.get('/users', async (req, res) => {
 // GET /users/:id - Fetch single user profile by ID
 router.get('/users/:id', async (req, res) => {
     try {
-        const user = await User.findById(req.params.id, '-password');
+        const user = await User.findById(req.params.id, '-password -emailVerificationOtpHash');
         if (!user) {
             return res.status(404).json({
                 success: false,

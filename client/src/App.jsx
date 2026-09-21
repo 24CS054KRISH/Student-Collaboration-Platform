@@ -5,6 +5,7 @@ import Features from "./components/Features";
 import Footer from "./components/Footer";
 import Login from "./components/Login";
 import Register from "./components/Register";
+import VerifyEmail from "./components/VerifyEmail";
 import Dashboard from "./components/Dashboard";
 import { verifyMe } from "./api/authApi";
 
@@ -16,6 +17,10 @@ function App() {
       return savedPage || "dashboard";
     }
     return savedPage && savedPage !== "dashboard" ? savedPage : "landing";
+  });
+
+  const [verificationEmail, setVerificationEmail] = useState(() => {
+    return localStorage.getItem("pendingVerificationEmail") || "";
   });
 
   const [isVerifying, setIsVerifying] = useState(() => {
@@ -39,7 +44,7 @@ function App() {
         if (response && response.success && response.user) {
           localStorage.setItem("user", JSON.stringify(response.user));
           const savedPage = localStorage.getItem("currentPage");
-          if (!savedPage || savedPage === "login" || savedPage === "register") {
+          if (!savedPage || savedPage === "login" || savedPage === "register" || savedPage === "verify-email") {
             handleNavigate("dashboard");
           } else {
             handleNavigate(savedPage);
@@ -62,7 +67,11 @@ function App() {
     checkAuthSession();
   }, []);
 
-  const handleNavigate = (page) => {
+  const handleNavigate = (page, data = null) => {
+    if (data && data.email) {
+      setVerificationEmail(data.email);
+      localStorage.setItem("pendingVerificationEmail", data.email);
+    }
     setCurrentPage(page);
     localStorage.setItem("currentPage", page);
   };
@@ -95,6 +104,9 @@ function App() {
           )}
           {currentPage === "register" && (
             <Register onNavigate={handleNavigate} />
+          )}
+          {currentPage === "verify-email" && (
+            <VerifyEmail email={verificationEmail} onNavigate={handleNavigate} />
           )}
           {currentPage === "dashboard" && (
             <Dashboard onNavigate={handleNavigate} />

@@ -324,6 +324,7 @@ async function seed() {
         const usersWithHashes = await Promise.all(
             RAW_USERS.map(async (u) => ({
                 ...u,
+                isEmailVerified: true,
                 password: await hash(u.password),
             }))
         );

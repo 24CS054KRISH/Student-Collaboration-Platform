@@ -5,10 +5,12 @@ import { useToast } from "./Toast";
 export default function Login({ onNavigate }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [unverifiedEmail, setUnverifiedEmail] = useState("");
   const showToast = useToast();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setUnverifiedEmail("");
     
     try {
       // Validate email and password
@@ -32,7 +34,13 @@ export default function Login({ onNavigate }) {
       // Navigate to Dashboard
       if (onNavigate) onNavigate("dashboard");
     } catch (error) {
-      // Show the backend error message
+      if (error.response?.data?.isUnverified) {
+        const targetEmail = error.response.data.email || email;
+        setUnverifiedEmail(targetEmail);
+        const errorMsg = error.response.data.message || "Your email is not verified yet. Please enter your verification code.";
+        showToast(errorMsg, "error");
+        return;
+      }
       const errorMessage = error.response?.data?.message || error.message || "Login failed";
       showToast(errorMessage, "error");
     }
@@ -63,6 +71,27 @@ export default function Login({ onNavigate }) {
               Sign in to connect and collaborate with peers
             </p>
           </div>
+
+          {/* Unverified Email Warning Banner */}
+          {unverifiedEmail && (
+            <div className="mt-6 rounded-xl bg-amber-50 border border-amber-200/80 p-4 text-xs text-amber-800 flex flex-col gap-2 animate-fadeIn">
+              <div className="flex items-start gap-2">
+                <svg className="h-4 w-4 shrink-0 mt-0.5 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <div className="font-medium leading-relaxed">
+                  Your email (<span className="font-semibold">{unverifiedEmail}</span>) is not verified yet.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onNavigate && onNavigate("verify-email", { email: unverifiedEmail })}
+                className="self-start mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600 text-white font-semibold rounded-lg hover:bg-amber-700 transition-colors cursor-pointer"
+              >
+                Verify Email Now &rarr;
+              </button>
+            </div>
+          )}
 
           {/* Form */}
           <form className="mt-8 space-y-6" onSubmit={handleSubmit}>

@@ -49,18 +49,28 @@ export default function Register({ onNavigate }) {
         password
       });
 
-      // Save response.token into localStorage as "token"
-      localStorage.setItem("token", response.token);
-
-      // Save response.user into localStorage as "user"
-      localStorage.setItem("user", JSON.stringify(response.user));
-
-      showToast("Registration successful", "success");
-
-      // Navigate to Dashboard
-      if (onNavigate) onNavigate("dashboard");
+      if (response && response.requireVerification) {
+        showToast(response.message || "Registration successful! A 6-digit verification code has been sent to your email.", "success");
+        if (onNavigate) {
+          onNavigate("verify-email", { email: response.email || email });
+        }
+      } else if (response && response.token) {
+        localStorage.setItem("token", response.token);
+        if (response.user) localStorage.setItem("user", JSON.stringify(response.user));
+        showToast("Registration successful", "success");
+        if (onNavigate) onNavigate("dashboard");
+      } else {
+        showToast("Registration successful! Please verify your email.", "success");
+        if (onNavigate) onNavigate("verify-email", { email });
+      }
     } catch (error) {
-      // If backend returns an error: Show alert(error.response.data.message)
+      if (error.response?.data?.requireVerification) {
+        showToast(error.response.data.message || "Please complete email verification.", "info");
+        if (onNavigate) {
+          onNavigate("verify-email", { email: error.response.data.email || email });
+        }
+        return;
+      }
       const errorMessage = error.response?.data?.message || error.message || "Registration failed";
       showToast(errorMessage, "error");
     }

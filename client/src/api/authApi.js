@@ -29,6 +29,34 @@ export const loginUser = async (userData) => {
 };
 
 /**
+ * Verify user email with 6-digit OTP.
+ * @param {Object} verificationData - { email, otp }
+ * @returns {Promise<Object>} The API response data containing token and user details
+ */
+export const verifyEmail = async (verificationData) => {
+    try {
+        const response = await API.post('/auth/verify-email', verificationData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
+ * Request a new verification OTP email with 60-second cooldown.
+ * @param {Object} resendData - { email }
+ * @returns {Promise<Object>} The API response data
+ */
+export const resendVerificationOtp = async (resendData) => {
+    try {
+        const response = await API.post('/auth/resend-verification', resendData);
+        return response.data;
+    } catch (error) {
+        throw error;
+    }
+};
+
+/**
  * Fetch all registered users.
  * @returns {Promise<Object>} The API response data containing users array
  */

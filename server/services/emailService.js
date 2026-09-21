@@ -49,10 +49,10 @@ async function sendRawGmailMessage({ from, to, subject, html }) {
     const google = getGoogle();
     const MailComposer = getMailComposer();
     const gmail = google.gmail({ version: 'v1', auth: oAuth2Client });
-    const senderEmail = process.env.GMAIL_SENDER_EMAIL || 'noreply@collabgrad.com';
+    const senderEmail = process.env.GMAIL_SENDER_EMAIL || 'skillsync1209@gmail.com';
 
     const composer = new MailComposer({
-      from: from || `"CollabGrad Platform" <${senderEmail}>`,
+      from: from || `"SkillSync Platform" <${senderEmail}>`,
       to,
       subject,
       html
@@ -271,9 +271,44 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
   });
 }
 
+/**
+ * 5. Email Verification OTP Notification
+ */
+async function sendVerificationOtpEmail({ recipientEmail, recipientName, otp }) {
+  const html = renderEmailTemplate({
+    title: "Verify Your Email Address 🔐",
+    subtitle: "Complete your CollabGrad account registration",
+    bodyHtml: `
+      <p style="margin:0 0 12px 0;">Hi <strong>${recipientName || 'Student'}</strong>,</p>
+      <p style="margin:0 0 16px 0;">
+        Thank you for joining CollabGrad! Please use the 6-digit verification code below to verify your email address and activate your account:
+      </p>
+      <div style="background-color:#eff6ff; border:2px dashed #2563eb; border-radius:12px; padding:20px; text-align:center; margin:24px 0;">
+        <span style="font-family:'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:36px; font-weight:800; letter-spacing:10px; color:#1d4ed8; display:inline-block; padding-left:10px;">${otp}</span>
+      </div>
+      <p style="margin:0 0 8px 0; font-size:13px; color:#64748b;">
+        ⏱️ This verification code is valid for <strong>10 minutes</strong>.
+      </p>
+      <p style="margin:0; font-size:12px; color:#94a3b8;">
+        If you did not create a CollabGrad account, please ignore this email. Do not share this code with anyone.
+      </p>
+    `
+  });
+
+  const senderEmail = process.env.GMAIL_SENDER_EMAIL || 'skillsync1209@gmail.com';
+  return await sendRawGmailMessage({
+    from: `"SkillSync Platform" <${senderEmail}>`,
+    to: recipientEmail,
+    subject: `🔐 Your SkillSync Verification Code: ${otp}`,
+    html
+  });
+}
+
 module.exports = {
   sendConnectionRequestEmail,
   sendConnectionAcceptedEmail,
   sendProjectJoinEmail,
-  sendProjectUpdateEmail
+  sendProjectUpdateEmail,
+  sendVerificationOtpEmail
 };
+
