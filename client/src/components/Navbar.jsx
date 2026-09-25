@@ -47,7 +47,7 @@ export default function Navbar({ onNavigate }) {
               </svg>
             </div>
             <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-xl font-bold tracking-tight text-transparent">
-              CollabGrad
+              SkillSync
             </span>
           </div>
 

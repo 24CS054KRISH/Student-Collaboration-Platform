@@ -31,7 +31,7 @@ export default function Footer({ onNavigate }) {
                 </svg>
               </div>
               <span className="bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-lg font-bold tracking-tight text-transparent">
-                CollabGrad
+                SkillSync
               </span>
             </div>
             <p className="text-sm leading-relaxed text-slate-500 max-w-sm">
@@ -122,7 +122,7 @@ export default function Footer({ onNavigate }) {
         {/* Bottom copyright */}
         <div className="mt-12 border-t border-slate-100 pt-8 flex items-center justify-between flex-wrap gap-4">
           <p className="text-sm text-slate-400">
-            &copy; {new Date().getFullYear()} CollabGrad. All rights reserved.
+            &copy; {new Date().getFullYear()} SkillSync. All rights reserved.
           </p>
         </div>
       </div>

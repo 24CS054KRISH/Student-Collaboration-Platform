@@ -164,7 +164,7 @@ export default function VerifyEmail({ email: initialEmail = "", onNavigate }) {
           localStorage.setItem("user", JSON.stringify(response.user));
         }
         localStorage.removeItem("pendingVerificationEmail");
-        showToast("Email verified successfully! Welcome to CollabGrad.", "success");
+        showToast("Email verified successfully! Welcome to SkillSync.", "success");
         if (onNavigate) {
           onNavigate("dashboard");
         }

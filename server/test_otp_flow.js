@@ -22,7 +22,7 @@ async function runTests() {
     console.log(' Connected to MongoDB for state verification.');
 
     const testTimestamp = Date.now();
-    const testEmail = `test_otp_${testTimestamp}@collabgrad.test`;
+    const testEmail = `test_otp_${testTimestamp}@skillsync.test`;
     const testPassword = 'Password123!';
     const testName = `OTP Tester ${testTimestamp}`;
 
@@ -227,8 +227,68 @@ async function runTests() {
         }
         console.log('  Test 8 Passed: Normal Email + Password login succeeds seamlessly without OTP.');
 
+        // --- Test 9: Legacy User Login (Aarav Sharma) ---
+        console.log('\n▶️ Test 9: Logging in with existing legacy user (aarav@gmail.com)...');
+        const legacyLoginRes = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: 'aarav@gmail.com',
+                password: '123456'
+            })
+        });
+
+        const legacyLoginData = await legacyLoginRes.json();
+        console.log(`   Response Status: ${legacyLoginRes.status}`);
+        console.log(`   Success: ${legacyLoginData.success}`);
+        console.log(`   Token issued: ${!!legacyLoginData.token}`);
+        console.log(`   isEmailVerified: ${legacyLoginData.user?.isEmailVerified}`);
+
+        if (legacyLoginRes.status !== 200 || !legacyLoginData.token || legacyLoginData.user?.isEmailVerified !== true) {
+            throw new Error(`Test 9 Failed: Existing user Aarav failed to log in normally.`);
+        }
+        console.log('  Test 9 Passed: Existing legacy user logs in normally with email + password without OTP.');
+
+        // --- Test 10: Legacy User Auto-Verification Fallback Check ---
+        console.log('\n▶️ Test 10: Testing login safeguard for legacy account simulated with isEmailVerified=false and no OTP fields...');
+        const legacySimEmail = `simulated_legacy_${testTimestamp}@skillsync.test`;
+        const bcrypt = require('bcrypt');
+        const hashedSimPassword = await bcrypt.hash('Password123!', 10);
+        await User.create({
+            fullName: 'Simulated Legacy User',
+            email: legacySimEmail,
+            password: hashedSimPassword,
+            isEmailVerified: false,
+            emailVerificationOtpHash: null,
+            emailVerificationOtpExpiresAt: null
+        });
+
+        const simLoginRes = await fetch(`${API_BASE}/auth/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                email: legacySimEmail,
+                password: 'Password123!'
+            })
+        });
+
+        const simLoginData = await simLoginRes.json();
+        console.log(`   Response Status: ${simLoginRes.status}`);
+        console.log(`   Success: ${simLoginData.success}`);
+        console.log(`   Token issued: ${!!simLoginData.token}`);
+        console.log(`   User verified: ${simLoginData.user?.isEmailVerified}`);
+
+        if (simLoginRes.status !== 200 || !simLoginData.token || simLoginData.user?.isEmailVerified !== true) {
+            await User.deleteOne({ email: legacySimEmail });
+            throw new Error(`Test 10 Failed: Simulated legacy user was not automatically verified.`);
+        }
+
+        // Cleanup simulated legacy user
+        await User.deleteOne({ email: legacySimEmail });
+        console.log('  Test 10 Passed: Legacy account safely auto-verified on login.');
+
         console.log('\n====================================================');
-        console.log('🎉 ALL 8 TESTS PASSED SUCCESSFULLY! 100% SPEC COMPLIANT');
+        console.log('🎉 ALL 10 TESTS PASSED SUCCESSFULLY! 100% SPEC COMPLIANT');
         console.log('====================================================\n');
 
     } catch (err) {

@@ -1,5 +1,5 @@
 /**
- * seed.js — CollabGrad Database Seeder
+ * seed.js — SkillSync Database Seeder
  *
  * Populates MongoDB with:
  *  - 10 realistic student users (bcrypt-hashed passwords)
@@ -292,7 +292,7 @@ async function seed() {
     const clearOnly = process.argv.includes('--clear-only');
 
     try {
-        console.log('\n🌱  CollabGrad Database Seeder');
+        console.log('\n🌱  SkillSync Database Seeder');
         console.log('═══════════════════════════════════════');
 
         // Connect to MongoDB

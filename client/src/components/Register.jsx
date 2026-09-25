@@ -98,7 +98,7 @@ export default function Register({ onNavigate }) {
               Create Your Account
             </h2>
             <p className="mt-2 text-sm text-slate-500 font-normal">
-              Join CollabGrad to collaborate on projects and find teams
+              Join SkillSync to collaborate on projects and find teams
             </p>
           </div>
 

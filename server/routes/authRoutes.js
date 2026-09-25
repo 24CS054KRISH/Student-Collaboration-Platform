@@ -223,7 +223,7 @@ router.post('/verify-email', async (req, res) => {
 
         return res.status(200).json({
             success: true,
-            message: "Email verified successfully! Welcome to CollabGrad.",
+            message: "Email verified successfully! Welcome to SkillSync.",
             token,
             user: userObj
         });
@@ -343,12 +343,18 @@ router.post('/login', async (req, res) => {
 
         // 4. Check if email is verified
         if (user.isEmailVerified === false) {
-            return res.status(403).json({
-                success: false,
-                isUnverified: true,
-                email: user.email,
-                message: "Please verify your email before logging in. An OTP was sent to your email during registration."
-            });
+            // Defensive check: If user has no OTP hash or expiration (legacy user), treat as verified
+            if (!user.emailVerificationOtpHash && !user.emailVerificationOtpExpiresAt) {
+                user.isEmailVerified = true;
+                await user.save();
+            } else {
+                return res.status(403).json({
+                    success: false,
+                    isUnverified: true,
+                    email: user.email,
+                    message: "Please verify your email before logging in. An OTP was sent to your email during registration."
+                });
+            }
         }
 
         // 5. If correct & verified

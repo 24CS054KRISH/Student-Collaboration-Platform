@@ -20,12 +20,12 @@ async function sendViaGmailRestApi() {
 
     // Compose raw MIME email
     const mailOptions = {
-      from: `"CollabGrad Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
+      from: `"SkillSync Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
       to: "krishmendapara84@gmail.com",
       subject: "🤝 Test Connection Request via Gmail API REST",
       html: `
         <div style="font-family:sans-serif; padding:20px; border:1px solid #e2e8f0; border-radius:12px;">
-          <h2 style="color:#2563eb;">CollabGrad Platform</h2>
+          <h2 style="color:#2563eb;">SkillSync Platform</h2>
           <p>Hi <strong>Krish</strong>,</p>
           <p>This is a live test notification email sent via official Gmail REST API + OAuth 2.0!</p>
         </div>

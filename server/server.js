@@ -11,6 +11,7 @@ const connectionRoutes = require("./routes/connectionRoutes");
 const messageRoutes = require("./routes/messageRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const Message = require("./models/Message");
+const User = require("./models/User");
 
 const app = express();
 const server = http.createServer(app);
@@ -238,7 +239,31 @@ io.on("connection", (socket) => {
 
 mongoose
     .connect(process.env.MONGO_URI)
-    .then(() => console.log("✅ MongoDB Connected"))
+    .then(async () => {
+        console.log("✅ MongoDB Connected");
+        try {
+            // Automatically ensure all legacy users created prior to OTP verification are marked verified
+            const result = await User.updateMany(
+                {
+                    $or: [
+                        { isEmailVerified: { $exists: false } },
+                        { isEmailVerified: null },
+                        {
+                            isEmailVerified: false,
+                            emailVerificationOtpHash: { $in: [null, undefined] },
+                            emailVerificationOtpExpiresAt: { $in: [null, undefined] }
+                        }
+                    ]
+                },
+                { $set: { isEmailVerified: true } }
+            );
+            if (result.modifiedCount > 0) {
+                console.log(`✅ Auto-verified ${result.modifiedCount} legacy user(s).`);
+            }
+        } catch (err) {
+            console.error("Error auto-verifying legacy users:", err.message);
+        }
+    })
     .catch((err) => console.log("❌ MongoDB Error:", err));
 
 const PORT = process.env.PORT || 5000;

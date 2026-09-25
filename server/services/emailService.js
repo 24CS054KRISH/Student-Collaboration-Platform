@@ -86,7 +86,7 @@ async function sendRawGmailMessage({ from, to, subject, html }) {
 }
 
 /**
- * Common HTML email template wrapper matching CollabGrad branding.
+ * Common HTML email template wrapper matching SkillSync branding.
  */
 function renderEmailTemplate({ title, subtitle, bodyHtml, buttonText, buttonUrl }) {
   return `
@@ -105,7 +105,7 @@ function renderEmailTemplate({ title, subtitle, bodyHtml, buttonText, buttonUrl 
             <table border="0" cellpadding="0" cellspacing="0" width="100%">
               <tr>
                 <td>
-                  <span style="font-size:22px; font-weight:800; color:#ffffff; letter-spacing:-0.5px;">CollabGrad</span>
+                  <span style="font-size:22px; font-weight:800; color:#ffffff; letter-spacing:-0.5px;">SkillSync</span>
                   <span style="font-size:12px; font-weight:600; color:#93c5fd; display:block; margin-top:2px;">Student Collaboration Platform</span>
                 </td>
               </tr>
@@ -139,7 +139,7 @@ function renderEmailTemplate({ title, subtitle, bodyHtml, buttonText, buttonUrl 
         <tr>
           <td style="padding: 20px 32px; background-color: #f1f5f9; border-top: 1px solid #e2e8f0; text-align: center;">
             <p style="font-size: 11px; color: #94a3b8; margin: 0; font-weight: 500;">
-              CollabGrad • Academic Peer Collaboration Platform
+              SkillSync • Academic Peer Collaboration Platform
             </p>
             <p style="font-size: 10px; color: #cbd5e1; margin: 4px 0 0 0;">
               This is an automated notification email sent via official Gmail REST API + OAuth 2.0.
@@ -158,7 +158,7 @@ function renderEmailTemplate({ title, subtitle, bodyHtml, buttonText, buttonUrl 
 async function sendConnectionRequestEmail({ recipientEmail, recipientName, senderName, senderEmail }) {
   const html = renderEmailTemplate({
     title: "New Connection Request 🤝",
-    subtitle: `${senderName} wants to connect with you on CollabGrad`,
+    subtitle: `${senderName} wants to connect with you on SkillSync`,
     bodyHtml: `
       <p style="margin:0 0 12px 0;">Hi <strong>${recipientName || 'Student'}</strong>,</p>
       <p style="margin:0 0 12px 0;">
@@ -171,9 +171,9 @@ async function sendConnectionRequestEmail({ recipientEmail, recipientName, sende
   });
 
   return await sendRawGmailMessage({
-    from: `"${senderName} via CollabGrad" <${process.env.GMAIL_SENDER_EMAIL}>`,
+    from: `"${senderName} via SkillSync" <${process.env.GMAIL_SENDER_EMAIL}>`,
     to: recipientEmail,
-    subject: `🤝 ${senderName} sent you a connection request on CollabGrad`,
+    subject: `🤝 ${senderName} sent you a connection request on SkillSync`,
     html
   });
 }
@@ -188,7 +188,7 @@ async function sendConnectionAcceptedEmail({ recipientEmail, recipientName, acce
     bodyHtml: `
       <p style="margin:0 0 12px 0;">Hi <strong>${recipientName || 'Student'}</strong>,</p>
       <p style="margin:0 0 12px 0;">
-        Great news! <strong>${accepterName}</strong> has accepted your connection request on CollabGrad.
+        Great news! <strong>${accepterName}</strong> has accepted your connection request on SkillSync.
       </p>
       <p style="margin:0;">You can now exchange direct chat messages, view shared projects, and start collaborating!</p>
     `,
@@ -197,7 +197,7 @@ async function sendConnectionAcceptedEmail({ recipientEmail, recipientName, acce
   });
 
   return await sendRawGmailMessage({
-    from: `"CollabGrad Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
+    from: `"SkillSync Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
     to: recipientEmail,
     subject: `🎉 ${accepterName} accepted your connection request!`,
     html
@@ -238,7 +238,7 @@ async function sendProjectJoinEmail({ recipientEmail, recipientName, projectTitl
   });
 
   return await sendRawGmailMessage({
-    from: `"CollabGrad Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
+    from: `"SkillSync Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
     to: recipientEmail,
     subject: type === 'accepted' ? `🚀 Joined Project: "${projectTitle}"` : `📋 New Team Application for "${projectTitle}"`,
     html
@@ -264,7 +264,7 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
   });
 
   return await sendRawGmailMessage({
-    from: `"CollabGrad Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
+    from: `"SkillSync Platform" <${process.env.GMAIL_SENDER_EMAIL}>`,
     to: recipientEmail,
     subject: `📢 Project Update: "${projectTitle}"`,
     html
@@ -277,11 +277,11 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
 async function sendVerificationOtpEmail({ recipientEmail, recipientName, otp }) {
   const html = renderEmailTemplate({
     title: "Verify Your Email Address 🔐",
-    subtitle: "Complete your CollabGrad account registration",
+    subtitle: "Complete your SkillSync account registration",
     bodyHtml: `
       <p style="margin:0 0 12px 0;">Hi <strong>${recipientName || 'Student'}</strong>,</p>
       <p style="margin:0 0 16px 0;">
-        Thank you for joining CollabGrad! Please use the 6-digit verification code below to verify your email address and activate your account:
+        Thank you for joining SkillSync! Please use the 6-digit verification code below to verify your email address and activate your account:
       </p>
       <div style="background-color:#eff6ff; border:2px dashed #2563eb; border-radius:12px; padding:20px; text-align:center; margin:24px 0;">
         <span style="font-family:'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace; font-size:36px; font-weight:800; letter-spacing:10px; color:#1d4ed8; display:inline-block; padding-left:10px;">${otp}</span>
@@ -290,7 +290,7 @@ async function sendVerificationOtpEmail({ recipientEmail, recipientName, otp }) 
         ⏱️ This verification code is valid for <strong>10 minutes</strong>.
       </p>
       <p style="margin:0; font-size:12px; color:#94a3b8;">
-        If you did not create a CollabGrad account, please ignore this email. Do not share this code with anyone.
+        If you did not create a SkillSync account, please ignore this email. Do not share this code with anyone.
       </p>
     `
   });
