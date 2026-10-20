@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create a reusable Axios instance configured with the backend base URL
 const API = axios.create({
-    baseURL: 'http://localhost:5000/api',
+    baseURL: import.meta.env.VITE_API_URL || 'https://student-collaboration-platform-production.up.railway.app/api',
     headers: {
         'Content-Type': 'application/json',
     },

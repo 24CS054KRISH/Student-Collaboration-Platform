@@ -3,7 +3,7 @@ import { io } from "socket.io-client";
 import { getConversations, getDirectMessages, getProjectMessages, sendMessage, editMessage, deleteMessage, clearDirectChat, deleteMessageForMe, uploadChatAttachment, addMessageReaction } from "../api/messageApi";
 import { useToast } from "./Toast";
 
-const SOCKET_SERVER_URL = "http://localhost:5000";
+const SOCKET_SERVER_URL = import.meta.env.VITE_SOCKET_URL || "https://student-collaboration-platform-production.up.railway.app";
 
 export default function Messages({ initialPeer, initialChannel, onSelectPeer }) {
   const [conversations, setConversations] = useState({ directChats: [], teamChats: [] });

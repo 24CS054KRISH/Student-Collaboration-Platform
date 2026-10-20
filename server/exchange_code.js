@@ -27,20 +27,27 @@ async function exchange() {
 
     console.log('✅ Success: Received new refresh token!');
 
-    // Update server/.env
+    // Update server/.env cleanly without duplicates
     const envPath = path.join(__dirname, '.env');
     let envContent = fs.readFileSync(envPath, 'utf8');
 
-    if (envContent.includes('GOOGLE_REFRESH_TOKEN=')) {
-      envContent = envContent.replace(
-        /GOOGLE_REFRESH_TOKEN=.*/,
-        `GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`
-      );
-    } else {
-      envContent += `\nGOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`;
+    const lines = envContent.split(/\r?\n/);
+    let replaced = false;
+    const newLines = [];
+    for (const line of lines) {
+      if (line.startsWith('GOOGLE_REFRESH_TOKEN=')) {
+        if (!replaced) {
+          newLines.push(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
+          replaced = true;
+        }
+      } else {
+        newLines.push(line);
+      }
     }
-
-    fs.writeFileSync(envPath, envContent, 'utf8');
+    if (!replaced) {
+      newLines.push(`GOOGLE_REFRESH_TOKEN=${tokens.refresh_token}`);
+    }
+    fs.writeFileSync(envPath, newLines.join('\n'), 'utf8');
     console.log('💾 Automatically updated GOOGLE_REFRESH_TOKEN in server/.env!');
     console.log('🎉 You are now ready to send emails from skillsync1209@gmail.com!');
   } catch (err) {

@@ -35,13 +35,63 @@ function getOAuth2Client() {
   return oAuth2Client;
 }
 
+let _nodemailer = null;
+function getNodemailer() {
+  if (!_nodemailer) {
+    _nodemailer = require('nodemailer');
+  }
+  return _nodemailer;
+}
+
 /**
- * Sends a raw MIME email via official Gmail REST API (v1.users.messages.send)
+ * Sends email via Gmail SMTP using a 16-character Google App Password.
+ * Permanent and never expires after 7 days!
+ */
+async function sendViaSmtp({ from, to, subject, html }) {
+  const appPassword = (process.env.GMAIL_APP_PASSWORD || process.env.EMAIL_PASS || '').replace(/\s+/g, '');
+  if (!appPassword) return null; // No app password configured, skip SMTP
+
+  try {
+    const nodemailer = getNodemailer();
+    const senderEmail = process.env.GMAIL_SENDER_EMAIL || 'skillsync1209@gmail.com';
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: senderEmail,
+        pass: appPassword
+      }
+    });
+
+    console.log(`📧 [Gmail SMTP Dispatch] To: "${to}" | Subject: "${subject}"`);
+    const info = await transporter.sendMail({
+      from: from || `"SkillSync Platform" <${senderEmail}>`,
+      to,
+      subject,
+      html
+    });
+
+    console.log(`✉️ [Gmail SMTP Response] Message ID: ${info.messageId}`);
+    return true;
+  } catch (smtpErr) {
+    console.error("🔒 Safe Email Log: Error dispatching email via Gmail SMTP:", smtpErr.message);
+    return false;
+  }
+}
+
+/**
+ * Sends an email via Gmail SMTP (App Password) or Gmail REST API (OAuth 2.0).
  */
 async function sendRawGmailMessage({ from, to, subject, html }) {
+  // 1. If GMAIL_APP_PASSWORD is provided, try sending via SMTP (never expires)
+  const smtpResult = await sendViaSmtp({ from, to, subject, html });
+  if (smtpResult === true) {
+    return true;
+  }
+
+  // 2. Otherwise try sending via Google OAuth 2.0 REST API
   const oAuth2Client = getOAuth2Client();
   if (!oAuth2Client) {
-    console.log("ℹ️ Email skipped: Google OAuth credentials not configured in environment.");
+    console.log("ℹ️ Email skipped: Neither GMAIL_APP_PASSWORD nor valid Google OAuth credentials configured in environment.");
     return false;
   }
 
@@ -78,7 +128,12 @@ async function sendRawGmailMessage({ from, to, subject, html }) {
     return true;
   } catch (err) {
     console.error("🔒 Safe Email Log: Error dispatching email via Gmail REST API:", err.message);
-    if (err.response && err.response.data) {
+    if (err.message && err.message.includes('invalid_grant')) {
+      console.log("\n⚠️  [GMAIL OAUTH EXPIRED: invalid_grant]");
+      console.log("   Google OAuth refresh token has expired or been revoked.");
+      console.log("   👉 Option 1 (Permanent): Set GMAIL_APP_PASSWORD in server/.env (Google Account > 2FA > App Passwords)");
+      console.log("   👉 Option 2 (Re-authorize OAuth): Run 'node get_auth_url.js' and 'node exchange_code.js <code>'\n");
+    } else if (err.response && err.response.data) {
       console.error("   Details:", JSON.stringify(err.response.data));
     }
     return false;
@@ -167,7 +222,7 @@ async function sendConnectionRequestEmail({ recipientEmail, recipientName, sende
       <p style="margin:0;">You can review and respond to this request in your platform dashboard.</p>
     `,
     buttonText: "Review Pending Request",
-    buttonUrl: "http://localhost:5173"
+    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
   });
 
   return await sendRawGmailMessage({
@@ -193,7 +248,7 @@ async function sendConnectionAcceptedEmail({ recipientEmail, recipientName, acce
       <p style="margin:0;">You can now exchange direct chat messages, view shared projects, and start collaborating!</p>
     `,
     buttonText: "View My Connections",
-    buttonUrl: "http://localhost:5173"
+    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
   });
 
   return await sendRawGmailMessage({
@@ -234,7 +289,7 @@ async function sendProjectJoinEmail({ recipientEmail, recipientName, projectTitl
     subtitle: subtitleText,
     bodyHtml,
     buttonText: "Open Project Workspace",
-    buttonUrl: "http://localhost:5173"
+    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
   });
 
   return await sendRawGmailMessage({
@@ -260,7 +315,7 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
       </div>
     `,
     buttonText: "View Project Details",
-    buttonUrl: "http://localhost:5173"
+    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
   });
 
   return await sendRawGmailMessage({
@@ -275,6 +330,12 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
  * 5. Email Verification OTP Notification
  */
 async function sendVerificationOtpEmail({ recipientEmail, recipientName, otp }) {
+  console.log(`\n====================================================`);
+  console.log(`🔐 [SKILLSYNC VERIFICATION OTP DISPATCH]`);
+  console.log(`   Recipient: ${recipientEmail} (${recipientName || 'Student'})`);
+  console.log(`   OTP Code:  ${otp}`);
+  console.log(`====================================================\n`);
+
   const html = renderEmailTemplate({
     title: "Verify Your Email Address 🔐",
     subtitle: "Complete your SkillSync account registration",
