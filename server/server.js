@@ -16,20 +16,32 @@ const User = require("./models/User");
 const app = express();
 const server = http.createServer(app);
 
+const allowedOrigins = [
+    "https://student-collaboration-platform-production.up.railway.app",
+    "http://localhost:5173",
+    "http://localhost:3000",
+    process.env.CLIENT_URL,
+    process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, "") : null
+].filter(Boolean);
+
+const corsOptions = {
+    origin: (origin, callback) => {
+        // Allow requests with no origin (such as mobile apps, curl, or Postman)
+        if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".up.railway.app")) {
+            return callback(null, true);
+        }
+        return callback(null, false);
+    },
+    credentials: true
+};
+
 const io = new Server(server, {
-    cors: {
-        origin: "*",
-        methods: ["GET", "POST", "PUT", "DELETE"]
-    }
+    cors: corsOptions
 });
 
 app.set("io", io);
 
-app.use(cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"]
-}));
+app.use(cors(corsOptions));
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
@@ -283,14 +295,14 @@ app.use((err, req, res, next) => {
     });
 });
 
-const PORT = parseInt(process.env.PORT, 10) || 5000;
+const PORT = process.env.PORT || 8080;
 
 server.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT} (0.0.0.0) with Socket.io active 🚀`);
 });
 
 server.on("error", (err) => {
-    console.error("❌ HTTP Server Error:", err);
+    console.error(`❌ HTTP Server Error on port ${PORT}:`, err.message);
 });
 
 // Process-level uncaught exception handlers to avoid silent Railway container crashes
