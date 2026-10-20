@@ -222,7 +222,7 @@ async function sendConnectionRequestEmail({ recipientEmail, recipientName, sende
       <p style="margin:0;">You can review and respond to this request in your platform dashboard.</p>
     `,
     buttonText: "Review Pending Request",
-    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
+    buttonUrl: "http://localhost:5173"
   });
 
   return await sendRawGmailMessage({
@@ -248,7 +248,7 @@ async function sendConnectionAcceptedEmail({ recipientEmail, recipientName, acce
       <p style="margin:0;">You can now exchange direct chat messages, view shared projects, and start collaborating!</p>
     `,
     buttonText: "View My Connections",
-    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
+    buttonUrl: "http://localhost:5173"
   });
 
   return await sendRawGmailMessage({
@@ -289,7 +289,7 @@ async function sendProjectJoinEmail({ recipientEmail, recipientName, projectTitl
     subtitle: subtitleText,
     bodyHtml,
     buttonText: "Open Project Workspace",
-    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
+    buttonUrl: "http://localhost:5173"
   });
 
   return await sendRawGmailMessage({
@@ -315,7 +315,7 @@ async function sendProjectUpdateEmail({ recipientEmail, recipientName, projectTi
       </div>
     `,
     buttonText: "View Project Details",
-    buttonUrl: process.env.CLIENT_URL || "https://student-collaboration-platform-production.up.railway.app"
+    buttonUrl: "http://localhost:5173"
   });
 
   return await sendRawGmailMessage({

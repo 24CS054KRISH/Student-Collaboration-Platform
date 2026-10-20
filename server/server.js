@@ -16,32 +16,16 @@ const User = require("./models/User");
 const app = express();
 const server = http.createServer(app);
 
-const allowedOrigins = [
-    "https://student-collaboration-platform-production.up.railway.app",
-    "http://localhost:5173",
-    "http://localhost:3000",
-    process.env.CLIENT_URL,
-    process.env.CLIENT_URL ? process.env.CLIENT_URL.replace(/\/$/, "") : null
-].filter(Boolean);
-
-const corsOptions = {
-    origin: (origin, callback) => {
-        // Allow requests with no origin (such as mobile apps, curl, or Postman)
-        if (!origin || allowedOrigins.includes(origin) || origin.endsWith(".up.railway.app")) {
-            return callback(null, true);
-        }
-        return callback(null, false);
-    },
-    credentials: true
-};
-
 const io = new Server(server, {
-    cors: corsOptions
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST", "PUT", "DELETE"]
+    }
 });
 
 app.set("io", io);
 
-app.use(cors(corsOptions));
+app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/projects", projectRoutes);
@@ -253,63 +237,37 @@ io.on("connection", (socket) => {
     });
 });
 
-if (!process.env.MONGO_URI) {
-    console.warn("⚠️ Warning: MONGO_URI environment variable is not defined! Please configure MONGO_URI in your Railway Dashboard Variables.");
-} else {
-    mongoose
-        .connect(process.env.MONGO_URI)
-        .then(async () => {
-            console.log("✅ MongoDB Connected");
-            try {
-                // Automatically ensure all legacy users created prior to OTP verification are marked verified
-                const result = await User.updateMany(
-                    {
-                        $or: [
-                            { isEmailVerified: { $exists: false } },
-                            { isEmailVerified: null },
-                            {
-                                isEmailVerified: false,
-                                emailVerificationOtpHash: { $in: [null, undefined] },
-                                emailVerificationOtpExpiresAt: { $in: [null, undefined] }
-                            }
-                        ]
-                    },
-                    { $set: { isEmailVerified: true } }
-                );
-                if (result.modifiedCount > 0) {
-                    console.log(`✅ Auto-verified ${result.modifiedCount} legacy user(s).`);
-                }
-            } catch (err) {
-                console.error("Error auto-verifying legacy users:", err.message);
+mongoose
+    .connect(process.env.MONGO_URI)
+    .then(async () => {
+        console.log("✅ MongoDB Connected");
+        try {
+            // Automatically ensure all legacy users created prior to OTP verification are marked verified
+            const result = await User.updateMany(
+                {
+                    $or: [
+                        { isEmailVerified: { $exists: false } },
+                        { isEmailVerified: null },
+                        {
+                            isEmailVerified: false,
+                            emailVerificationOtpHash: { $in: [null, undefined] },
+                            emailVerificationOtpExpiresAt: { $in: [null, undefined] }
+                        }
+                    ]
+                },
+                { $set: { isEmailVerified: true } }
+            );
+            if (result.modifiedCount > 0) {
+                console.log(`✅ Auto-verified ${result.modifiedCount} legacy user(s).`);
             }
-        })
-        .catch((err) => console.error("❌ MongoDB Error:", err.message));
-}
+        } catch (err) {
+            console.error("Error auto-verifying legacy users:", err.message);
+        }
+    })
+    .catch((err) => console.log("❌ MongoDB Error:", err));
 
-// Global Express error handler to guarantee valid JSON & CORS headers on any error
-app.use((err, req, res, next) => {
-    console.error("❌ Unhandled Express Request Error:", err);
-    res.status(err.status || 500).json({
-        success: false,
-        message: err.message || "Internal server error"
-    });
-});
+const PORT = process.env.PORT || 5000;
 
-const PORT = process.env.PORT || 8080;
-
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT} (0.0.0.0) with Socket.io active 🚀`);
-});
-
-server.on("error", (err) => {
-    console.error(`❌ HTTP Server Error on port ${PORT}:`, err.message);
-});
-
-// Process-level uncaught exception handlers to avoid silent Railway container crashes
-process.on("unhandledRejection", (reason, promise) => {
-    console.error("❌ Unhandled Promise Rejection:", reason);
-});
-
-process.on("uncaughtException", (err) => {
-    console.error("❌ Uncaught Exception:", err);
+server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT} with Socket.io active 🚀`);
 });

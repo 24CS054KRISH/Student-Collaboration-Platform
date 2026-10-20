@@ -95,7 +95,7 @@ export default function Dashboard({ onNavigate }) {
     const userId = loggedInUser._id || loggedInUser.id;
     if (!userId) return;
 
-    const socket = io(import.meta.env.VITE_SOCKET_URL || "https://student-collaboration-platform-production.up.railway.app");
+    const socket = io("http://localhost:5000");
 
     socket.on("connect", () => {
       socket.emit("join_room", `user_${userId}`);
